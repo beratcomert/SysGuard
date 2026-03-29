@@ -1,0 +1,15 @@
+{
+  "name": "sysguard",
+  "version": "1.0.0",
+  "description": "**SysGuard** is a modern desktop system diagnostic tool designed to analyze your computer, detect issues, and provide real-time insights into system health.",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^41.1.0"
+  }
+}
