@@ -1,33 +1,37 @@
-const { exec } = require("child_process"); // komut çalıştırma
+const { spawn } = require("child_process");// komut çalıştırma
 
 function scanSystem() {
     return new Promise((resolve, reject) => {
 
-        // Windows sistem tarama komutu
-        exec("sfc /scannow", (error, stdout, stderr) => {
+        const process = spawn("sfc", ["/scannow"]);
 
-            // hata olursa
-            if (error) {
-                return resolve({
-                    status: "error",
-                    message: "Scan failed"
-                });
-            }
+        let output = "";
+
+        process.stdout.on("data", (data) => {
+            // 🔥 EN KRİTİK KISIM (encoding fix)
+            output += data.toString("utf16le");
+        });
+
+        process.stderr.on("data", (data) => {
+            console.error("Error:", data.toString());
+        });
+
+        process.on("close", () => {
+
+            // null karakterleri temizle
+            output = output.replace(/\u0000/g, "");
 
             let issues = 0;
 
-            // çıktı içinde hata var mı kontrol et
-            if (stdout.includes("Windows Resource Protection found corrupt files")) {
+            if (output.includes("Windows Resource Protection found corrupt files")) {
                 issues = 1;
             }
 
-            // sonucu frontend'e gönder
             resolve({
                 status: "done",
                 issues: issues,
-                raw: stdout // detaylı çıktı
+                raw: output
             });
-
         });
     });
 }
