@@ -56,7 +56,7 @@ app/
 ## ⚙️ Installation
 
 ```bash
-git clone https://github.com/beratcomert/sysguard.git
+git clone https://github.com/beratcomert/SysGuard.git
 cd sysguard
 npm install
 npm start
