@@ -85,9 +85,9 @@
                         <h1>Sistem Paneli</h1>
                         <p class="page-subtitle">Genel sistem durumunuza genel bir bakış</p>
                     </div>
-                    <button class="btn-primary" id="btn-scan-dashboard" onclick="runFullScan()">
+                    <button class="btn-primary" id="btn-scan-dashboard" onclick="runQuickScanUI()">
                         <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                        Sistem Tara
+                        Hızlı Tara
                     </button>
                 </div>
 
@@ -223,10 +223,18 @@
                         <h1>Antigravity Agent</h1>
                         <p class="page-subtitle">Akıllı sistem analizi ve kişiselleştirilmiş öneriler</p>
                     </div>
-                    <button class="btn-primary" id="btn-run-agent" onclick="runAgent()">
+                <div class="scan-btn-group">
+                    <button class="btn-primary" id="btn-quick-scan" onclick="runQuickScanUI()">
                         <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        Agent'ı Çalıştır
+                        Hızlı Tara
+                        <span class="scan-badge">~1s</span>
                     </button>
+                    <button class="btn-secondary" id="btn-deep-scan" onclick="runDeepScanUI()">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="1.8"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        Detaylı Tara
+                        <span class="scan-badge secondary">~10s</span>
+                    </button>
+                </div>
                 </div>
 
                 <div id="agent-loading" style="display:none">

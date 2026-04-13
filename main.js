@@ -2,79 +2,85 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 
-// Backend modüllerini içe aktarıyoruz
-const { scanSystem } = require('./system/scan');
+// Backend modülleri
 const { getHealth } = require('./system/health');
 const { cleanTemp } = require('./system/temp');
-const { runAgent } = require('./system/agent');
+const { runQuickScan, runDeepScan } = require('./system/agent');
 
-// Pencere oluşturma fonksiyonu
+let mainWindow = null;
+
+// ─── Pencere oluştur ──────────────────────────────────────────────────────────
 function createWindow() {
-    const win = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
         minWidth: 900,
         minHeight: 650,
-        frame: false,
-        titleBarStyle: 'hidden',
+        frame: false,          // Custom titlebar
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false
         },
-        backgroundColor: '#0d0f1a'
+        backgroundColor: '#0d0f1a',
+        show: false            // Hazır olunca göster (beyaz flash yok)
     });
 
-    win.loadFile('renderer/index.html');
+    mainWindow.loadFile('renderer/index.html');
 
-    // Pencere kontrol IPC
-    ipcMain.on('window-minimize', () => win.minimize());
-    ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
-    ipcMain.on('window-close', () => win.close());
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+    });
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
 }
 
-// Uygulama hazır olunca pencereyi başlat
-app.whenReady().then(createWindow);
+// ─── Uygulama hazır ───────────────────────────────────────────────────────────
+app.whenReady().then(() => {
+    createWindow();
 
-
-// 🔗 FRONTEND → BACKEND bağlantıları
-
-// Sistem tarama isteği
-ipcMain.handle("scan-system", async () => {
-    return await scanSystem();
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
 });
 
-// Sistem sağlık bilgisi isteği
-ipcMain.handle("get-health", async () => {
-    return getHealth();
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
 });
 
-// Temp temizleme isteği
-ipcMain.handle("clean-temp", async () => {
-    return cleanTemp();
+// ─── Pencere Kontrolleri ──────────────────────────────────────────────────────
+ipcMain.on('window-minimize', () => mainWindow?.minimize());
+ipcMain.on('window-maximize', () => {
+    if (!mainWindow) return;
+    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
+ipcMain.on('window-close', () => mainWindow?.close());
 
-// Antigravity Agent analizi
-ipcMain.handle("run-agent", async () => {
-    return runAgent();
-});
+// ─── IPC: Sistem ─────────────────────────────────────────────────────────────
+ipcMain.handle('get-health', async () => getHealth());
 
-// Klasör açma
-ipcMain.handle("open-folder", async (event, folderType) => {
+ipcMain.handle('clean-temp', async () => cleanTemp());
+
+// Hızlı Tarama — sadece OS modülü, anlık sonuç
+ipcMain.handle('quick-scan', async () => runQuickScan());
+
+// Detaylı Tarama — PowerShell sorguları, kapsamlı analiz
+ipcMain.handle('deep-scan', async () => runDeepScan());
+
+// ─── IPC: Dosya/Ayar İşlemleri ───────────────────────────────────────────────
+ipcMain.handle('open-folder', async (event, folderType) => {
     let folderPath = '';
-    if (folderType === 'downloads') {
-        folderPath = path.join(os.homedir(), 'Downloads');
-    } else if (folderType === 'temp') {
-        folderPath = os.tmpdir();
-    }
-    if (folderPath) shell.openPath(folderPath);
+    if (folderType === 'downloads') folderPath = path.join(os.homedir(), 'Downloads');
+    else if (folderType === 'temp')      folderPath = os.tmpdir();
+    if (folderPath) await shell.openPath(folderPath);
     return { opened: folderPath };
 });
 
-// Sistem ayarları açma
-ipcMain.handle("open-settings", async (event, settingType) => {
+ipcMain.handle('open-settings', async (event, settingType) => {
     if (settingType === 'startup_apps') {
-        shell.openExternal('ms-settings:startupapps');
+        await shell.openExternal('ms-settings:startupapps');
     }
     return { opened: settingType };
 });

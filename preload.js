@@ -1,19 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Frontend'e güvenli fonksiyonlar açıyoruz
 contextBridge.exposeInMainWorld('electronAPI', {
 
-    // Sistem tarama başlat
-    scanSystem: () => ipcRenderer.invoke('scan-system'),
-
-    // CPU & RAM bilgisi al
+    // Sistem sağlık bilgisi (anlık)
     getHealth: () => ipcRenderer.invoke('get-health'),
 
     // Temp temizle
     cleanTemp: () => ipcRenderer.invoke('clean-temp'),
 
-    // Antigravity Agent analizi
-    runAgent: () => ipcRenderer.invoke('run-agent'),
+    // Hızlı Tarama — ~50ms, sadece OS modülü
+    quickScan: () => ipcRenderer.invoke('quick-scan'),
+
+    // Detaylı Tarama — ~5-10s, PowerShell analizi
+    deepScan: () => ipcRenderer.invoke('deep-scan'),
 
     // Klasör aç
     openFolder: (folderType) => ipcRenderer.invoke('open-folder', folderType),
@@ -24,6 +23,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Pencere kontrolleri
     minimizeWindow: () => ipcRenderer.send('window-minimize'),
     maximizeWindow: () => ipcRenderer.send('window-maximize'),
-    closeWindow: () => ipcRenderer.send('window-close')
+    closeWindow:    () => ipcRenderer.send('window-close')
 
 });

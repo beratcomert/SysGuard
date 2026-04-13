@@ -1,310 +1,353 @@
-const os = require('os');
-const fs = require('fs');
+/**
+ * Antigravity Agent — Sistem Analiz Motoru
+ *
+ * runQuickScan()  → Sadece Node.js OS modülü, ~50ms, anlık
+ * runDeepScan()   → PowerShell sorguları, ~3-8s, kapsamlı
+ */
+
+const os   = require('os');
+const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// ─── Yardımcı Fonksiyonlar ───────────────────────────────────────────────────
+// ─── Yardımcılar ──────────────────────────────────────────────────────────────
+const toGB  = b => parseFloat((b / 1024 ** 3).toFixed(2));
+const toGBs = b => `${toGB(b)} GB`;
 
-function bytesToGB(bytes) {
-    return (bytes / (1024 ** 3)).toFixed(2);
-}
-
+/**
+ * PowerShell komutunu güvenli çalıştır (timeout: 8s)
+ * Hata olursa null döner.
+ */
 function runPS(cmd) {
     try {
-        return execSync(`powershell -NoProfile -Command "${cmd}"`, {
-            encoding: 'utf8',
-            timeout: 10000,
-            windowsHide: true
-        }).trim();
-    } catch (e) {
+        return execSync(
+            `powershell -NoProfile -NonInteractive -Command "${cmd}"`,
+            { encoding: 'utf8', timeout: 8000, windowsHide: true }
+        ).trim();
+    } catch (_) {
         return null;
     }
 }
 
-// ─── Veri Toplama Modülleri ──────────────────────────────────────────────────
+// ─── Hızlı Veri Toplama (sadece Node.js) ─────────────────────────────────────
 
-function collectRamData() {
+function fastRam() {
     const total = os.totalmem();
-    const free = os.freemem();
-    const used = total - free;
-    const usagePercent = ((used / total) * 100).toFixed(1);
-    return { total, free, used, usagePercent: parseFloat(usagePercent) };
+    const free  = os.freemem();
+    const used  = total - free;
+    return {
+        total, free, used,
+        usagePercent: parseFloat(((used / total) * 100).toFixed(1))
+    };
 }
 
-function collectCpuData() {
-    // Windows'ta loadavg her zaman 0 döner; processleri say
-    const raw = runPS("Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 | ConvertTo-Json -Depth 1");
-    let topProcesses = [];
-    try {
-        const parsed = JSON.parse(raw);
-        const arr = Array.isArray(parsed) ? parsed : [parsed];
-        topProcesses = arr.map(p => ({
-            name: p.ProcessName || p.Name || 'unknown',
-            cpu: parseFloat((p.CPU || 0).toFixed(1)),
-            id: p.Id
-        }));
-    } catch (_) {}
-    return { topProcesses };
-}
+function fastDisk() {
+    const drives = [];
+    const letters = ['C', 'D', 'E', 'F', 'G'];
 
-function collectDiskData() {
-    const raw = runPS("Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free | ConvertTo-Json");
-    let drives = [];
-    try {
-        const parsed = JSON.parse(raw);
-        const arr = Array.isArray(parsed) ? parsed : [parsed];
-        drives = arr.map(d => ({
-            name: d.Name,
-            used: d.Used || 0,
-            free: d.Free || 0,
-            total: (d.Used || 0) + (d.Free || 0),
-            usagePercent: d.Used && d.Free
-                ? parseFloat(((d.Used / (d.Used + d.Free)) * 100).toFixed(1))
-                : 0
-        })).filter(d => d.total > 0);
-    } catch (_) {}
+    for (const l of letters) {
+        const drivePath = `${l}:\\`;
+        try {
+            // Node 18+ — statfsSync
+            let total, free;
+            if (typeof fs.statfsSync === 'function') {
+                const stat = fs.statfsSync(drivePath);
+                total = stat.blocks * stat.bsize;
+                free  = stat.bfree  * stat.bsize;
+            } else {
+                // Fallback: PowerShell ile tek sürücü hızlıca sorgu
+                const raw = runPS(`$d=Get-PSDrive -Name '${l}' -PSProvider FileSystem -EA SilentlyContinue; if($d){"{{\\"used\\":$($d.Used),\\"free\\":$($d.Free)}}"}`);
+                if (!raw) continue;
+                const parsed = JSON.parse(raw);
+                total = (parsed.used || 0) + (parsed.free || 0);
+                free  = parsed.free || 0;
+            }
+            const used = total - free;
+            if (total > 0) {
+                drives.push({
+                    name: l,
+                    total, free, used,
+                    usagePercent: parseFloat(((used / total) * 100).toFixed(1))
+                });
+            }
+        } catch (_) {
+            // Sürücü yok veya erişilemiyor, atla
+        }
+    }
     return { drives };
 }
 
-function collectStartupApps() {
-    const raw = runPS("Get-CimInstance Win32_StartupCommand | Select-Object Name,Command,Location | ConvertTo-Json");
-    let apps = [];
+function fastTempSize() {
+    const tmpDir = os.tmpdir();
+    let size = 0, count = 0;
     try {
-        const parsed = JSON.parse(raw);
-        const arr = Array.isArray(parsed) ? parsed : [parsed];
-        apps = arr.map(a => ({ name: a.Name || 'Unknown', command: a.Command || '', location: a.Location || '' }));
-    } catch (_) {}
-    return { apps, count: apps.length };
-}
-
-function collectTempSize() {
-    const tempDir = os.tmpdir();
-    let totalSize = 0;
-    let fileCount = 0;
-    try {
-        const files = fs.readdirSync(tempDir);
-        files.forEach(f => {
-            try {
-                const stat = fs.statSync(path.join(tempDir, f));
-                totalSize += stat.size;
-                fileCount++;
-            } catch (_) {}
-        });
-    } catch (_) {}
-    return { totalSize, fileCount, totalSizeGB: parseFloat(bytesToGB(totalSize)) };
-}
-
-function collectDownloadsSize() {
-    const downloadsPath = path.join(os.homedir(), 'Downloads');
-    let totalSize = 0;
-    let fileCount = 0;
-    try {
-        const files = fs.readdirSync(downloadsPath);
-        files.forEach(f => {
-            try {
-                const stat = fs.statSync(path.join(downloadsPath, f));
-                totalSize += stat.size;
-                fileCount++;
-            } catch (_) {}
-        });
-    } catch (_) {}
-    return { totalSize, fileCount, totalSizeGB: parseFloat(bytesToGB(totalSize)), path: downloadsPath };
-}
-
-function collectSuspiciousProcesses() {
-    const raw = runPS("Get-Process | Where-Object { $_.CPU -gt 50 } | Select-Object ProcessName,CPU,Id | ConvertTo-Json");
-    let suspicious = [];
-    try {
-        const parsed = JSON.parse(raw);
-        if (parsed) {
-            const arr = Array.isArray(parsed) ? parsed : [parsed];
-            // Bilinen güvenli işlemleri filtrele
-            const safe = ['svchost', 'System', 'chrome', 'msedge', 'firefox', 'explorer', 'electron', 'node', 'powershell'];
-            suspicious = arr.filter(p => {
-                const name = (p.ProcessName || '').toLowerCase();
-                return !safe.some(s => name.includes(s));
-            }).map(p => ({ name: p.ProcessName, cpu: parseFloat((p.CPU || 0).toFixed(1)), id: p.Id }));
+        for (const f of fs.readdirSync(tmpDir)) {
+            try { size += fs.statSync(path.join(tmpDir, f)).size; count++; } catch (_) {}
         }
     } catch (_) {}
-    return { suspicious };
+    return { totalSize: size, fileCount: count, totalSizeGB: toGB(size) };
 }
 
-// ─── Ana Agent Fonksiyonu ────────────────────────────────────────────────────
+function fastDownloadsSize() {
+    const dlPath = path.join(os.homedir(), 'Downloads');
+    let size = 0, count = 0;
+    try {
+        for (const f of fs.readdirSync(dlPath)) {
+            try { size += fs.statSync(path.join(dlPath, f)).size; count++; } catch (_) {}
+        }
+    } catch (_) {}
+    return { totalSize: size, fileCount: count, totalSizeGB: toGB(size), path: dlPath };
+}
 
-function runAgent() {
-    const suggestions = [];
+function fastCpuInfo() {
+    const cpus = os.cpus();
+    return {
+        model: cpus[0]?.model || 'Bilinmiyor',
+        cores: cpus.length,
+        // Windows'ta loadavg anlamlı değil; sadece mevzuat için
+        loadAvg: os.loadavg()[0]
+    };
+}
 
-    // 1. RAM Analizi
-    const ram = collectRamData();
+// ─── Öneri Üretici — Hızlı ───────────────────────────────────────────────────
+function buildQuickSuggestions(ram, disk, temp, downloads) {
+    const s = [];
+
+    // RAM
     if (ram.usagePercent > 85) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
-            priority: 'high',
-            category: 'performance',
-            title: 'Bellek Kullanımı Kritik Seviyede',
-            description: `RAM'inin %${ram.usagePercent}'i kullanımda (${bytesToGB(ram.used)} GB / ${bytesToGB(ram.total)} GB). Bu durum uygulamaların yavaşlamasına veya çökmesine neden olabilir.`,
-            analysis_context: {
-                ram_usage_percent: ram.usagePercent,
-                used_gb: bytesToGB(ram.used),
-                total_gb: bytesToGB(ram.total),
-                free_gb: bytesToGB(ram.free)
-            },
+        s.push({
+            agent_id: 'antigravity_v1', priority: 'high', category: 'performance',
+            title: 'RAM Kritik Seviyede',
+            description: `RAM'in %${ram.usagePercent}'i dolu (${toGBs(ram.used)} / ${toGBs(ram.total)}). Uygulamalar yavaşlayabilir veya çökebilir.`,
+            analysis_context: { ram_kullanim: `%${ram.usagePercent}`, bos: toGBs(ram.free) },
             suggested_actions: [
-                { label: 'Çalışan Uygulamaları Gör', action_type: 'open_section', action_payload: 'processes' },
-                { label: 'Belleği Temizle', action_type: 'background_process', action_payload: 'clean_ram' }
+                { label: 'Sistem Sağlığını Gör', action_type: 'open_section', action_payload: 'health' }
             ]
         });
     } else if (ram.usagePercent > 70) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
-            priority: 'medium',
-            category: 'performance',
-            title: 'Bellek Kullanımı Yüksek',
-            description: `RAM'inin %${ram.usagePercent}'i kullanımda. Birden fazla ağır uygulama açıksa performans düşebilir.`,
-            analysis_context: {
-                ram_usage_percent: ram.usagePercent,
-                used_gb: bytesToGB(ram.used),
-                total_gb: bytesToGB(ram.total)
-            },
+        s.push({
+            agent_id: 'antigravity_v1', priority: 'medium', category: 'performance',
+            title: 'RAM Kullanımı Yüksek',
+            description: `RAM'in %${ram.usagePercent}'i kullanımda. Ağır uygulamalar açıksa performans düşebilir.`,
+            analysis_context: { ram_kullanim: `%${ram.usagePercent}`, bos: toGBs(ram.free) },
             suggested_actions: [
-                { label: 'Detayları Gör', action_type: 'open_section', action_payload: 'health' }
+                { label: 'Sistem Sağlığını Gör', action_type: 'open_section', action_payload: 'health' }
             ]
         });
     }
 
-    // 2. Disk Analizi
-    const disk = collectDiskData();
-    disk.drives.forEach(drive => {
-        if (drive.usagePercent > 90) {
-            suggestions.push({
-                agent_id: 'antigravity_agent_v1',
-                priority: 'high',
-                category: 'disk_space',
-                title: `${drive.name}: Sürücüsü Neredeyse Dolu`,
-                description: `${drive.name}: sürücüsünün %${drive.usagePercent}'i dolu. Sadece ${bytesToGB(drive.free)} GB boş alan kaldı. Bu durum sistem performansını ciddi biçimde etkiler.`,
-                analysis_context: {
-                    drive: drive.name,
-                    usage_percent: drive.usagePercent,
-                    free_gb: bytesToGB(drive.free),
-                    total_gb: bytesToGB(drive.total)
-                },
+    // Disk
+    for (const d of disk.drives) {
+        if (d.usagePercent > 90) {
+            s.push({
+                agent_id: 'antigravity_v1', priority: 'high', category: 'disk_space',
+                title: `${d.name}: Diski Neredeyse Dolu`,
+                description: `${d.name}: sürücüsü %${d.usagePercent} dolu, yalnızca ${toGBs(d.free)} boş alan kaldı.`,
+                analysis_context: { doluluk: `%${d.usagePercent}`, bos: toGBs(d.free), toplam: toGBs(d.total) },
                 suggested_actions: [
-                    { label: 'Temp Dosyaları Temizle', action_type: 'background_process', action_payload: 'clean_temp' },
-                    { label: 'Downloads Klasörünü Aç', action_type: 'open_folder', action_payload: 'downloads' }
+                    { label: 'Temp Temizle', action_type: 'background_process', action_payload: 'clean_temp' },
+                    { label: 'Downloads Aç',  action_type: 'open_folder',        action_payload: 'downloads' }
                 ]
             });
-        } else if (drive.usagePercent > 75) {
-            suggestions.push({
-                agent_id: 'antigravity_agent_v1',
-                priority: 'medium',
-                category: 'disk_space',
-                title: `${drive.name}: Disk Alanı Azalıyor`,
-                description: `${drive.name}: sürücüsünün %${drive.usagePercent}'i dolu. ${bytesToGB(drive.free)} GB boş alan var.`,
-                analysis_context: {
-                    drive: drive.name,
-                    usage_percent: drive.usagePercent,
-                    free_gb: bytesToGB(drive.free)
-                },
+        } else if (d.usagePercent > 80) {
+            s.push({
+                agent_id: 'antigravity_v1', priority: 'medium', category: 'disk_space',
+                title: `${d.name}: Disk Alanı Azalıyor`,
+                description: `${d.name}: %${d.usagePercent} dolu. ${toGBs(d.free)} boş alan var.`,
+                analysis_context: { doluluk: `%${d.usagePercent}`, bos: toGBs(d.free) },
                 suggested_actions: [
-                    { label: 'Temp Dosyaları Temizle', action_type: 'background_process', action_payload: 'clean_temp' }
+                    { label: 'Temp Temizle', action_type: 'background_process', action_payload: 'clean_temp' }
                 ]
             });
         }
-    });
+    }
 
-    // 3. Temp Dosyaları
-    const temp = collectTempSize();
+    // Temp
     if (temp.totalSizeGB > 0.5) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
+        s.push({
+            agent_id: 'antigravity_v1',
             priority: temp.totalSizeGB > 2 ? 'high' : 'low',
             category: 'disk_space',
             title: 'Geçici Dosyalar Yer Kaplıyor',
-            description: `Temp klasöründe ${temp.fileCount} dosya var ve toplam ${temp.totalSizeGB} GB yer kaplıyor. Bu dosyalar güvenle silinebilir.`,
-            analysis_context: {
-                temp_size_gb: temp.totalSizeGB,
-                file_count: temp.fileCount
-            },
+            description: `Temp klasöründe ${temp.fileCount} dosya, toplam ${temp.totalSizeGB} GB. Güvenle temizlenebilir.`,
+            analysis_context: { boyut: `${temp.totalSizeGB} GB`, dosya_sayisi: temp.fileCount },
             suggested_actions: [
                 { label: 'Hemen Temizle', action_type: 'background_process', action_payload: 'clean_temp' }
             ]
         });
     }
 
-    // 4. Downloads Analizi
-    const downloads = collectDownloadsSize();
+    // Downloads
     if (downloads.totalSizeGB > 1) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
-            priority: 'low',
-            category: 'disk_space',
-            title: 'Downloads Klasörü Büyük',
-            description: `İndirilenler klasöründe ${downloads.fileCount} dosya var ve ${downloads.totalSizeGB} GB yer kaplıyor. Eski indirmeleri gözden geçirebilirsin.`,
-            analysis_context: {
-                downloads_size_gb: downloads.totalSizeGB,
-                file_count: downloads.fileCount,
-                path: downloads.path
-            },
+        s.push({
+            agent_id: 'antigravity_v1', priority: 'low', category: 'disk_space',
+            title: 'İndirilenler Klasörü Büyük',
+            description: `Downloads klasöründe ${downloads.fileCount} dosya, toplam ${downloads.totalSizeGB} GB yer kaplıyor.`,
+            analysis_context: { boyut: `${downloads.totalSizeGB} GB`, dosya_sayisi: downloads.fileCount },
             suggested_actions: [
                 { label: 'Klasörü Aç', action_type: 'open_folder', action_payload: 'downloads' }
             ]
         });
     }
 
-    // 5. Başlangıç Uygulamaları
-    const startup = collectStartupApps();
-    if (startup.count > 8) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
-            priority: 'medium',
-            category: 'performance',
+    // Sırala: high → medium → low
+    const order = { high: 0, medium: 1, low: 2 };
+    return s.sort((a, b) => order[a.priority] - order[b.priority]);
+}
+
+// ─── Öneri Üretici — Detaylı (PS verileri dahil) ─────────────────────────────
+function buildDeepSuggestions(quickSuggestions, psData) {
+    const s = [...quickSuggestions];
+
+    // Başlangıç uygulamaları
+    if (psData.startupCount > 8) {
+        s.push({
+            agent_id: 'antigravity_v1', priority: 'medium', category: 'performance',
             title: 'Çok Fazla Başlangıç Uygulaması',
-            description: `Bilgisayarın açılırken ${startup.count} uygulama otomatik başlıyor. Bu açılış süresini uzatır ve sistem kaynaklarını tüketir.`,
+            description: `Bilgisayarın açılırken ${psData.startupCount} uygulama otomatik başlıyor. Bu açılış süresini ciddi şekilde uzatır.`,
             analysis_context: {
-                startup_app_count: startup.count,
-                apps: startup.apps.slice(0, 5).map(a => a.name)
+                baslangic_uygulama_sayisi: psData.startupCount,
+                ornekler: psData.startupApps.slice(0, 4).join(', ')
             },
             suggested_actions: [
-                { label: 'Başlangıç Yöneticisini Aç', action_type: 'open_settings', action_payload: 'startup_apps' }
+                { label: 'Başlangıç Yöneticisi', action_type: 'open_settings', action_payload: 'startup_apps' }
             ]
         });
     }
 
-    // 6. Şüpheli İşlemler
-    const security = collectSuspiciousProcesses();
-    if (security.suspicious.length > 0) {
-        suggestions.push({
-            agent_id: 'antigravity_agent_v1',
-            priority: 'high',
-            category: 'security',
-            title: 'Şüpheli Yüksek CPU Kullanan İşlem Tespit Edildi',
-            description: `Tanımadığın ${security.suspicious.length} işlem yüksek CPU tüketiyor: ${security.suspicious.map(p => p.name).join(', ')}. Bu bir güvenlik tehdidi olabilir.`,
+    // Şüpheli yüksek-CPU işlemleri
+    if (psData.suspicious.length > 0) {
+        s.push({
+            agent_id: 'antigravity_v1', priority: 'high', category: 'security',
+            title: 'Şüpheli Yüksek CPU İşlemi Tespit Edildi',
+            description: `Tanımadığın ${psData.suspicious.length} işlem yüksek CPU kullanıyor: ${psData.suspicious.map(p => p.name).join(', ')}.`,
             analysis_context: {
-                suspicious_processes: security.suspicious
+                islem_sayisi: psData.suspicious.length,
+                islemler: psData.suspicious.map(p => `${p.name} (${p.cpu.toFixed(0)}s)`).join(', ')
             },
             suggested_actions: [
-                { label: 'İşlemleri İncele', action_type: 'open_section', action_payload: 'processes' },
-                { label: 'Güvenlik Taraması', action_type: 'background_process', action_payload: 'security_scan' }
+                { label: 'Detayları Gör', action_type: 'open_section', action_payload: 'health' },
+                { label: 'Güvenlik Ayarları', action_type: 'open_settings', action_payload: 'security' }
             ]
         });
     }
 
-    // Önceliğe göre sırala
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    suggestions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+    // Sırala
+    const order = { high: 0, medium: 1, low: 2 };
+    return s.sort((a, b) => order[a.priority] - order[b.priority]);
+}
+
+// ─── PowerShell Veri Toplama (paralel) ───────────────────────────────────────
+function collectPSData() {
+    // Startup uygulamaları
+    let startupCount = 0;
+    let startupApps  = [];
+    try {
+        const raw = runPS("Get-CimInstance Win32_StartupCommand | Select-Object -ExpandProperty Name | ConvertTo-Json");
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const arr = Array.isArray(parsed) ? parsed : [parsed];
+            startupApps  = arr.filter(Boolean);
+            startupCount = startupApps.length;
+        }
+    } catch (_) {}
+
+    // Şüpheli işlemler (CPU > 30s birikmeli kullanım, bilinen güvenli hariç)
+    const SAFE = new Set(['svchost','system','chrome','msedge','firefox','explorer','electron','node','powershell','csrss','smss','lsass','winlogon','services','wininit','dwm','taskhostw','searchidle']);
+    let suspicious = [];
+    try {
+        const raw = runPS("Get-Process | Where-Object { $_.CPU -gt 30 } | Select-Object ProcessName,CPU,Id | ConvertTo-Json");
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const arr    = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+            suspicious   = arr
+                .filter(p => p && !SAFE.has((p.ProcessName || '').toLowerCase()))
+                .map(p => ({ name: p.ProcessName, cpu: parseFloat(p.CPU || 0), id: p.Id }));
+        }
+    } catch (_) {}
+
+    // Top CPU işlemleri (dashboard için)
+    let topProcesses = [];
+    try {
+        const raw = runPS("Get-Process | Sort-Object CPU -Descending | Select-Object -First 6 ProcessName,CPU | ConvertTo-Json");
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const arr    = Array.isArray(parsed) ? parsed : [parsed];
+            topProcesses = arr.map(p => ({ name: p.ProcessName, cpu: parseFloat((p.CPU || 0).toFixed(1)) }));
+        }
+    } catch (_) {}
+
+    return { startupCount, startupApps, suspicious, topProcesses };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PUBLIC API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * HIZLI TARAMA — ~50-100ms
+ * Sadece Node.js modülleri kullanır. Anlık sonuç verir.
+ */
+function runQuickScan() {
+    const ram       = fastRam();
+    const disk      = fastDisk();
+    const temp      = fastTempSize();
+    const downloads = fastDownloadsSize();
+    const cpu       = fastCpuInfo();
+
+    const suggestions = buildQuickSuggestions(ram, disk, temp, downloads);
 
     return {
+        scanType: 'quick',
         timestamp: new Date().toISOString(),
         system: {
-            hostname: os.hostname(),
-            platform: os.platform(),
-            arch: os.arch(),
-            uptime_hours: (os.uptime() / 3600).toFixed(1),
-            ram: ram,
-            disk: disk
+            hostname:      os.hostname(),
+            platform:      os.platform(),
+            arch:          os.arch(),
+            uptime_hours:  parseFloat((os.uptime() / 3600).toFixed(1)),
+            ram,
+            disk,
+            cpu
         },
         suggestions
     };
 }
 
-module.exports = { runAgent };
+/**
+ * DETAYLı TARAMA — ~3-10s
+ * PowerShell ile derin analiz. İşlemler, başlangıç uygulamaları, güvenlik.
+ */
+function runDeepScan() {
+    // Önce hızlı verileri al
+    const ram       = fastRam();
+    const disk      = fastDisk();
+    const temp      = fastTempSize();
+    const downloads = fastDownloadsSize();
+    const cpu       = fastCpuInfo();
+
+    const quickSuggestions = buildQuickSuggestions(ram, disk, temp, downloads);
+
+    // PowerShell verilerini topla
+    const psData = collectPSData();
+
+    const suggestions = buildDeepSuggestions(quickSuggestions, psData);
+
+    return {
+        scanType: 'deep',
+        timestamp: new Date().toISOString(),
+        system: {
+            hostname:      os.hostname(),
+            platform:      os.platform(),
+            arch:          os.arch(),
+            uptime_hours:  parseFloat((os.uptime() / 3600).toFixed(1)),
+            ram,
+            disk,
+            cpu,
+            topProcesses:  psData.topProcesses,
+            startupCount:  psData.startupCount
+        },
+        suggestions
+    };
+}
+
+module.exports = { runQuickScan, runDeepScan };

@@ -1,4 +1,7 @@
-// ─── Yardımcı: Toast Bildirimleri ────────────────────────────────────────────
+// ─── Durum ───────────────────────────────────────────────────────────────────
+let lastScanData = null;
+
+// ─── Toast Bildirimleri ───────────────────────────────────────────────────────
 function toast(message, type = 'info') {
     const icons = {
         success: `<svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
@@ -15,28 +18,20 @@ function toast(message, type = 'info') {
     }, 3500);
 }
 
-// ─── Yardımcı: Halka İlerleme ─────────────────────────────────────────────────
+// ─── Halka İlerleme ──────────────────────────────────────────────────────────
 function setRingProgress(ringId, percent) {
     const ring = document.getElementById(ringId);
     if (!ring) return;
-    const circumference = 125.66;
-    const offset = circumference - (Math.min(percent, 100) / 100) * circumference;
+    const offset = 125.66 - (Math.min(Math.max(percent, 0), 100) / 100) * 125.66;
     ring.style.strokeDashoffset = offset;
 }
 
-// ─── Yardımcı: Sağlık Bar Rengi ──────────────────────────────────────────────
-function barColorClass(percent, metric) {
-    if (metric === 'ram' || metric === 'cpu') {
-        if (percent > 85) return 'bar-pink';
-        if (percent > 60) return 'bar-yellow';
-        return 'bar-purple';
+// ─── Bar Rengi ───────────────────────────────────────────────────────────────
+function barColorClass(pct, type) {
+    if (type === 'disk') {
+        return pct > 85 ? 'bar-pink' : pct > 70 ? 'bar-yellow' : 'bar-green';
     }
-    if (metric === 'disk') {
-        if (percent > 85) return 'bar-pink';
-        if (percent > 70) return 'bar-yellow';
-        return 'bar-green';
-    }
-    return 'bar-purple';
+    return pct > 85 ? 'bar-pink' : pct > 60 ? 'bar-yellow' : 'bar-purple';
 }
 
 // ─── Sekme Geçişleri ─────────────────────────────────────────────────────────
@@ -48,7 +43,7 @@ function showTab(name) {
     if (name === 'health') refreshHealth();
 }
 
-// ─── Kategori İkonu ───────────────────────────────────────────────────────────
+// ─── Kategori Simgesi ─────────────────────────────────────────────────────────
 function categoryIcon(cat) {
     const icons = {
         performance: `<svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -60,31 +55,24 @@ function categoryIcon(cat) {
     return icons[cat] || icons.performance;
 }
 
-// ─── Kategori Türkçe ─────────────────────────────────────────────────────────
 function categoryLabel(cat) {
-    const labels = {
-        performance: 'Performans', disk_space: 'Disk Alanı',
-        security: 'Güvenlik', hardware: 'Donanım', privacy: 'Gizlilik'
-    };
-    return labels[cat] || cat;
+    return { performance: 'Performans', disk_space: 'Disk Alanı', security: 'Güvenlik', hardware: 'Donanım', privacy: 'Gizlilik' }[cat] || cat;
 }
 
-// ─── Context Alanları Render ─────────────────────────────────────────────────
+// ─── Context Render ───────────────────────────────────────────────────────────
 function renderContext(ctx) {
     if (!ctx || !Object.keys(ctx).length) return '';
-    const entries = Object.entries(ctx)
+    const items = Object.entries(ctx)
         .filter(([, v]) => typeof v !== 'object' || Array.isArray(v))
-        .slice(0, 4);
-    if (!entries.length) return '';
-    const items = entries.map(([k, v]) => {
-        const val = Array.isArray(v) ? v.join(', ') : v;
-        const label = k.replace(/_/g, ' ');
-        return `<span class="context-item"><span class="context-key">${label}:</span><span class="context-val">${val}</span></span>`;
-    }).join('');
-    return `<div class="suggestion-context">${items}</div>`;
+        .slice(0, 4)
+        .map(([k, v]) => {
+            const val = Array.isArray(v) ? v.join(', ') : v;
+            return `<span class="context-item"><span class="context-key">${k.replace(/_/g, ' ')}:</span><span class="context-val">${val}</span></span>`;
+        }).join('');
+    return items ? `<div class="suggestion-context">${items}</div>` : '';
 }
 
-// ─── Öneri Kartı HTML Oluştur ─────────────────────────────────────────────────
+// ─── Öneri Kartı ──────────────────────────────────────────────────────────────
 function buildSuggestionCard(s, index) {
     const actions = (s.suggested_actions || []).map(a => {
         const payload = JSON.stringify({ type: a.action_type, payload: a.action_payload });
@@ -92,11 +80,9 @@ function buildSuggestionCard(s, index) {
     }).join('');
 
     return `
-    <div class="suggestion-card priority-${s.priority}" style="animation-delay:${index * 60}ms">
+    <div class="suggestion-card priority-${s.priority}" style="animation-delay:${index * 50}ms">
         <div class="suggestion-header">
-            <div class="suggestion-icon ${s.category}">
-                ${categoryIcon(s.category)}
-            </div>
+            <div class="suggestion-icon ${s.category}">${categoryIcon(s.category)}</div>
             <div class="suggestion-title-row">
                 <div class="suggestion-title">${s.title}</div>
                 <span class="priority-chip ${s.priority}">${s.priority === 'high' ? '⚠ Yüksek' : s.priority === 'medium' ? '◆ Orta' : '● Düşük'}</span>
@@ -108,7 +94,7 @@ function buildSuggestionCard(s, index) {
     </div>`;
 }
 
-// ─── Dashboard Özet Kartı ────────────────────────────────────────────────────
+// ─── Dashboard Özet Kartı ─────────────────────────────────────────────────────
 function buildPreviewCard(s) {
     return `
     <div class="preview-card priority-${s.priority}" onclick="showTab('agent')">
@@ -123,219 +109,273 @@ function buildPreviewCard(s) {
 
 // ─── Eylem İşleyici ──────────────────────────────────────────────────────────
 async function handleAction({ type, payload }) {
-    if (type === 'background_process') {
-        if (payload === 'clean_temp') {
-            await doCleanTemp();
-        } else if (payload === 'clean_ram') {
-            toast('Bellek optimizasyonu için gereksiz uygulamaları kapatın.', 'info');
-        } else if (payload === 'security_scan') {
-            toast('Windows Defender güvenlik taraması başlatılıyor...', 'info');
-            window.electronAPI.openSettings('security');
-        }
-    } else if (type === 'open_folder') {
-        const res = await window.electronAPI.openFolder(payload);
-        toast(`Klasör açıldı: ${res.opened}`, 'success');
-    } else if (type === 'open_settings') {
-        await window.electronAPI.openSettings(payload);
-        toast('Sistem ayarları açıldı.', 'success');
-    } else if (type === 'open_section') {
-        showTab(payload === 'health' || payload === 'processes' ? 'health' : payload);
-    }
-}
-
-// ─── Agent Çalıştır ───────────────────────────────────────────────────────────
-async function runAgent() {
-    const btn = document.getElementById('btn-run-agent');
-    const loading = document.getElementById('agent-loading');
-    const results = document.getElementById('agent-results');
-
-    btn.disabled = true;
-    btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Analiz Ediliyor...`;
-    loading.style.display = 'block';
-    results.style.display = 'none';
-
     try {
-        const data = await window.electronAPI.runAgent();
-        loading.style.display = 'none';
-        results.style.display = 'block';
-
-        // Dashboard'u da güncelle
-        updateDashboardMetrics(data.system);
-        updateDashboardSuggestions(data.suggestions);
-
-        if (!data.suggestions || data.suggestions.length === 0) {
-            results.innerHTML = `
-                <div class="all-clear">
-                    <div class="all-clear-icon">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>
-                    </div>
-                    <h3>Sistem Sağlıklı!</h3>
-                    <p>Tespit edilen herhangi bir sorun yok. Sisteminiz sorunsuz çalışıyor.</p>
-                </div>`;
-            updateBadge(0);
-        } else {
-            const cards = data.suggestions.map((s, i) => buildSuggestionCard(s, i)).join('');
-            results.innerHTML = `
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-                    <div style="font-size:13px;color:var(--text-secondary)">${data.suggestions.length} öneri bulundu • <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-muted)">${new Date(data.timestamp).toLocaleTimeString('tr-TR')}</span></div>
-                </div>
-                ${cards}`;
-            updateBadge(data.suggestions.filter(s => s.priority === 'high').length);
+        if (type === 'background_process') {
+            if (payload === 'clean_temp')  { await doCleanTemp(); return; }
+            if (payload === 'clean_ram')   { toast('Bellek için gereksiz uygulamaları kapatın.', 'info'); return; }
+            if (payload === 'security_scan') { await window.electronAPI.openSettings('security'); return; }
         }
-
-        toast(`Analiz tamamlandı — ${data.suggestions.length} öneri`, 'success');
-    } catch (err) {
-        loading.style.display = 'none';
-        results.style.display = 'block';
-        results.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Agent çalıştırılırken hata: ${err.message}</p></div>`;
-        toast('Agent analizi başarısız oldu.', 'error');
+        if (type === 'open_folder') {
+            const res = await window.electronAPI.openFolder(payload);
+            toast(`Klasör açıldı.`, 'success');
+            return;
+        }
+        if (type === 'open_settings') {
+            await window.electronAPI.openSettings(payload);
+            toast('Sistem ayarları açıldı.', 'success');
+            return;
+        }
+        if (type === 'open_section') {
+            showTab(payload === 'processes' ? 'health' : payload);
+        }
+    } catch (e) {
+        toast('İşlem gerçekleştirilemedi.', 'error');
     }
-
-    btn.disabled = false;
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Agent'ı Çalıştır`;
 }
 
-// ─── Badge Güncelle ───────────────────────────────────────────────────────────
+// ─── Badge ────────────────────────────────────────────────────────────────────
 function updateBadge(count) {
     const badge = document.getElementById('agent-badge');
-    if (count > 0) {
-        badge.style.display = 'flex';
-        badge.textContent = count;
-    } else {
-        badge.style.display = 'none';
-    }
+    if (count > 0) { badge.style.display = 'flex'; badge.textContent = count; }
+    else             badge.style.display = 'none';
 }
 
-// ─── Dashboard Metrikleri Güncelle ────────────────────────────────────────────
+// ─── Dashboard Metrikleri ─────────────────────────────────────────────────────
 function updateDashboardMetrics(sys) {
     if (!sys) return;
+    const toGB = b => b ? (b / 1024 ** 3).toFixed(1) : '?';
 
     // RAM
     const ramPct = sys.ram?.usagePercent || 0;
     document.getElementById('ram-value').textContent = `%${ramPct}`;
-    document.getElementById('ram-sub').textContent = `${sys.ram?.used ? (sys.ram.used / 1024**3).toFixed(1) : '?'} / ${sys.ram?.total ? (sys.ram.total / 1024**3).toFixed(1) : '?'} GB`;
+    document.getElementById('ram-sub').textContent   = `${toGB(sys.ram?.used)} / ${toGB(sys.ram?.total)} GB`;
     setRingProgress('ram-ring', ramPct);
 
-    // CPU (uptime baz alarak temsili)
-    const upHours = parseFloat(sys.uptime_hours) || 0;
-    document.getElementById('uptime-value').textContent = upHours > 24 ? `${(upHours / 24).toFixed(1)}g` : `${upHours}s`;
-    document.getElementById('uptime-sub').textContent = 'Sistem açık';
-
-    // Disk
+    // Disk C:
     const cDrive = sys.disk?.drives?.find(d => d.name === 'C');
     if (cDrive) {
         document.getElementById('disk-value').textContent = `%${cDrive.usagePercent}`;
-        document.getElementById('disk-sub').textContent = `${(cDrive.free / 1024**3).toFixed(1)} GB boş`;
+        document.getElementById('disk-sub').textContent   = `${toGB(cDrive.free)} GB boş`;
         setRingProgress('disk-ring', cDrive.usagePercent);
     }
 
-    // CPU placeholder
-    document.getElementById('cpu-value').textContent = 'Aktif';
-    document.getElementById('cpu-sub').textContent = sys.hostname || '';
+    // Uptime
+    const upH = parseFloat(sys.uptime_hours) || 0;
+    document.getElementById('uptime-value').textContent = upH > 24 ? `${(upH / 24).toFixed(1)}g` : `${upH}s`;
+
+    // CPU model
+    document.getElementById('cpu-value').textContent = sys.cpu?.cores ? `${sys.cpu.cores} Çekirdek` : 'Aktif';
+    document.getElementById('cpu-sub').textContent   = sys.hostname || 'Windows';
     setRingProgress('cpu-ring', 35);
 }
 
-// ─── Dashboard Önerileri Güncelle ─────────────────────────────────────────────
+// ─── Dashboard Önerileri ──────────────────────────────────────────────────────
 function updateDashboardSuggestions(suggestions) {
-    const container = document.getElementById('dashboard-suggestions');
-    if (!suggestions || !suggestions.length) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <span class="chip-ok">
-                    <svg viewBox="0 0 24 24" fill="none" width="12" height="12"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                    Tüm sistemler sağlıklı
-                </span>
-            </div>`;
+    const c = document.getElementById('dashboard-suggestions');
+    if (!suggestions?.length) {
+        c.innerHTML = `<div class="empty-state"><span class="chip-ok"><svg viewBox="0 0 24 24" fill="none" width="12" height="12"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Tüm sistemler sağlıklı</span></div>`;
         return;
     }
-    const preview = suggestions.slice(0, 3).map(buildPreviewCard).join('');
-    container.innerHTML = preview;
+    c.innerHTML = suggestions.slice(0, 3).map(buildPreviewCard).join('');
 }
 
-// ─── Tam Tarama (Dashboard butonu) ────────────────────────────────────────────
-async function runFullScan() {
-    const btn = document.getElementById('btn-scan-dashboard');
-    btn.disabled = true;
-    btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Taranıyor...`;
+// ─── Sonuçları Render Et ──────────────────────────────────────────────────────
+function renderScanResults(data) {
+    const results = document.getElementById('agent-results');
+    results.style.display = 'block';
 
-    await runAgent();
-    showTab('agent');
+    updateDashboardMetrics(data.system);
+    updateDashboardSuggestions(data.suggestions);
 
-    btn.disabled = false;
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Sistem Tara`;
+    const isDeep  = data.scanType === 'deep';
+    const typeChip = `<span class="scan-type-chip ${isDeep ? 'deep' : 'quick'}">${isDeep ? '⬛ Detaylı' : '⚡ Hızlı'}</span>`;
+    const time     = new Date(data.timestamp).toLocaleTimeString('tr-TR');
+    const highCount = (data.suggestions || []).filter(s => s.priority === 'high').length;
+
+    if (!data.suggestions?.length) {
+        results.innerHTML = `
+            <div class="all-clear">
+                <div class="all-clear-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>
+                </div>
+                <h3>Sistem Sağlıklı! ${typeChip}</h3>
+                <p>Tespit edilen herhangi bir sorun yok. Sisteminiz sorunsuz çalışıyor.</p>
+            </div>`;
+        updateBadge(0);
+        return;
+    }
+
+    const cards = data.suggestions.map((s, i) => buildSuggestionCard(s, i)).join('');
+    results.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:13px;color:var(--text-secondary)">
+                ${data.suggestions.length} öneri bulundu ${typeChip}
+                &nbsp;·&nbsp;
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-muted)">${time}</span>
+            </div>
+            ${!isDeep ? `<button class="btn-ghost" onclick="runDeepScanUI()" style="font-size:12px">
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="1.8"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Detaylı tara
+            </button>` : ''}
+        </div>
+        ${cards}`;
+    updateBadge(highCount);
 }
 
-// ─── Sistem Sağlığı Yenile ────────────────────────────────────────────────────
+// ─── HIZLI TARAMA (~50ms) ─────────────────────────────────────────────────────
+async function runQuickScanUI() {
+    const qBtn = document.getElementById('btn-quick-scan');
+    const dBtn = document.getElementById('btn-deep-scan');
+    const dDashBtn = document.getElementById('btn-scan-dashboard');
+    const loading  = document.getElementById('agent-loading');
+    const results  = document.getElementById('agent-results');
+
+    // Loading göster
+    [qBtn, dBtn, dDashBtn].forEach(b => b && (b.disabled = true));
+    loading.style.display = 'block';
+    results.style.display = 'none';
+
+    // Scan text güncelle
+    const scanText = document.querySelector('.scan-text');
+    const scanSub  = document.querySelector('.scan-sub');
+    if (scanText) scanText.textContent = 'Hızlı tarama yapılıyor...';
+    if (scanSub)  scanSub.textContent  = 'Bu yalnızca 1-2 saniye sürer';
+
+    try {
+        const data = await window.electronAPI.quickScan();
+        lastScanData = data;
+        loading.style.display = 'none';
+        renderScanResults(data);
+        toast(`Hızlı tarama tamamlandı — ${data.suggestions.length} öneri`, 'success');
+    } catch (err) {
+        loading.style.display = 'none';
+        results.style.display = 'block';
+        results.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Hata: ${err.message}</p></div>`;
+        toast('Tarama başarısız oldu.', 'error');
+    }
+
+    [qBtn, dBtn, dDashBtn].forEach(b => b && (b.disabled = false));
+}
+
+// ─── DETAYLI TARAMA (~5-10s) ──────────────────────────────────────────────────
+async function runDeepScanUI() {
+    const qBtn = document.getElementById('btn-quick-scan');
+    const dBtn = document.getElementById('btn-deep-scan');
+    const loading  = document.getElementById('agent-loading');
+    const results  = document.getElementById('agent-results');
+
+    [qBtn, dBtn].forEach(b => b && (b.disabled = true));
+    if (dBtn) {
+        dBtn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Analiz ediliyor... <span class="scan-badge secondary">~10s</span>`;
+    }
+
+    loading.style.display = 'block';
+    results.style.display = 'none';
+
+    const scanText = document.querySelector('.scan-text');
+    const scanSub  = document.querySelector('.scan-sub');
+    if (scanText) scanText.textContent = 'Derin sistem analizi yapılıyor...';
+    if (scanSub)  scanSub.textContent  = 'PowerShell ile işlem, disk ve güvenlik analizi...';
+
+    // Progress bar ekle
+    const agentLoading = document.getElementById('agent-loading');
+    const progressBar = document.createElement('div');
+    progressBar.className = 'deep-scan-progress';
+    progressBar.innerHTML = '<div class="deep-scan-bar"></div>';
+    agentLoading.querySelector('.agent-scanning')?.appendChild(progressBar);
+
+    try {
+        const data = await window.electronAPI.deepScan();
+        lastScanData = data;
+        loading.style.display = 'none';
+        progressBar.remove();
+        renderScanResults(data);
+        toast(`Detaylı tarama tamamlandı — ${data.suggestions.length} öneri`, 'success');
+
+        // Sağlık sekmesini de güncelle
+        if (document.getElementById('tab-health').classList.contains('active')) {
+            refreshHealth();
+        }
+    } catch (err) {
+        loading.style.display = 'none';
+        progressBar.remove();
+        results.style.display = 'block';
+        results.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Hata: ${err.message}</p></div>`;
+        toast('Detaylı tarama başarısız.', 'error');
+    }
+
+    [qBtn, dBtn].forEach(b => b && (b.disabled = false));
+    if (dBtn) {
+        dBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="1.8"/><path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Detaylı Tara <span class="scan-badge secondary">~10s</span>`;
+    }
+}
+
+// ─── Sistem Sağlığı ───────────────────────────────────────────────────────────
 async function refreshHealth() {
     const container = document.getElementById('health-content');
     container.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Yükleniyor...</p></div>`;
 
     try {
-        const [health, agentData] = await Promise.all([
-            window.electronAPI.getHealth(),
-            window.electronAPI.runAgent()
-        ]);
+        // Hızlı taramayı kullan, çok bekleme
+        const data = await window.electronAPI.quickScan();
+        const sys  = data.system;
+        const ram  = sys.ram || {};
+        const ramPct = parseFloat(ram.usagePercent || 0);
+        const drives = sys.disk?.drives || [];
+        const toGB  = b => b ? (b / 1024 ** 3).toFixed(1) : '?';
 
-        const sys = agentData?.system || {};
-        const ram = sys.ram || {};
-        const disk = sys.disk || {};
-        const ramPct = parseFloat(health.ram || ram.usagePercent || 0);
-        const drives = disk.drives || [];
-
-        // Disk barları
         const diskBars = drives.map(d => `
             <div class="health-bar-row">
                 <span class="health-bar-label">${d.name}:</span>
                 <div class="health-bar-track">
-                    <div class="health-bar-fill ${barColorClass(d.usagePercent, 'disk')}"
-                         style="width: ${d.usagePercent}%"></div>
+                    <div class="health-bar-fill ${barColorClass(d.usagePercent, 'disk')}" style="width:${d.usagePercent}%"></div>
                 </div>
                 <span class="health-bar-val">${d.usagePercent}%</span>
-            </div>`).join('') || '<p style="color:var(--text-muted);font-size:12px">Disk verisi alınamadı</p>';
+            </div>`).join('') || '<p style="color:var(--text-muted);font-size:12px">Disk verisi yok</p>';
 
-        // İşlemler
-        const procs = sys.cpu?.topProcesses || [];
+        // Eğer detaylı tarama verisi varsa işlemleri göster
+        const procs = lastScanData?.system?.topProcesses || [];
         const procRows = procs.length
             ? procs.map(p => `
                 <div class="process-row">
                     <span class="process-name">${p.name}</span>
                     <span class="process-cpu">${p.cpu.toFixed(1)}s CPU</span>
                 </div>`).join('')
-            : '<div class="process-row"><span style="color:var(--text-muted)">Veri yok</span></div>';
+            : `<div class="process-row" style="justify-content:center">
+                   <button class="btn-ghost" style="font-size:11px" onclick="runDeepScanUI();showTab('agent')">
+                       ⚡ Detaylı tarama yap
+                   </button>
+               </div>`;
 
         container.innerHTML = `
         <div class="health-grid">
             <div class="health-card">
-                <h3>Bellek</h3>
+                <h3>Bellek (RAM)</h3>
                 <div class="health-bar-row">
-                    <span class="health-bar-label">RAM</span>
+                    <span class="health-bar-label">Kullanım</span>
                     <div class="health-bar-track">
                         <div class="health-bar-fill ${barColorClass(ramPct, 'ram')}" style="width:${ramPct}%"></div>
                     </div>
                     <span class="health-bar-val">${ramPct}%</span>
                 </div>
-                <div class="health-bar-row">
-                    <span class="health-bar-label">Kullanılan</span>
-                    <div class="health-bar-track">
-                        <div class="health-bar-fill bar-purple" style="width:${ramPct}%"></div>
-                    </div>
-                    <span class="health-bar-val">${ram.used ? (ram.used/1024**3).toFixed(1) : '?'} GB</span>
-                </div>
                 <div style="margin-top:12px">
-                    <div class="info-row"><span class="info-key">Toplam</span><span class="info-val">${ram.total ? (ram.total/1024**3).toFixed(1) : '?'} GB</span></div>
-                    <div class="info-row"><span class="info-key">Boş</span><span class="info-val">${ram.free ? (ram.free/1024**3).toFixed(1) : '?'} GB</span></div>
+                    <div class="info-row"><span class="info-key">Toplam</span><span class="info-val">${toGB(ram.total)} GB</span></div>
+                    <div class="info-row"><span class="info-key">Kullanılan</span><span class="info-val">${toGB(ram.used)} GB</span></div>
+                    <div class="info-row"><span class="info-key">Boş</span><span class="info-val">${toGB(ram.free)} GB</span></div>
                 </div>
             </div>
             <div class="health-card">
-                <h3>Disk</h3>
+                <h3>Disk Kullanımı</h3>
                 ${diskBars}
             </div>
             <div class="health-card">
-                <h3>Sistem</h3>
-                <div class="info-row"><span class="info-key">Hostname</span><span class="info-val">${sys.hostname || '—'}</span></div>
+                <h3>Sistem Bilgileri</h3>
+                <div class="info-row"><span class="info-key">Bilgisayar Adı</span><span class="info-val">${sys.hostname || '—'}</span></div>
                 <div class="info-row"><span class="info-key">Platform</span><span class="info-val">${sys.platform || '—'}</span></div>
                 <div class="info-row"><span class="info-key">Mimari</span><span class="info-val">${sys.arch || '—'}</span></div>
-                <div class="info-row"><span class="info-key">Çalışma süresi</span><span class="info-val">${sys.uptime_hours || '—'} saat</span></div>
+                <div class="info-row"><span class="info-key">Çalışma Süresi</span><span class="info-val">${sys.uptime_hours} saat</span></div>
+                <div class="info-row"><span class="info-key">İşlemci</span><span class="info-val">${sys.cpu?.model?.split('@')[0]?.trim() || '—'}</span></div>
+                <div class="info-row"><span class="info-key">Çekirdek Sayısı</span><span class="info-val">${sys.cpu?.cores || '—'}</span></div>
             </div>
             <div class="health-card">
                 <h3>Yüksek CPU İşlemleri</h3>
@@ -343,26 +383,23 @@ async function refreshHealth() {
             </div>
         </div>`;
 
-        // Dashboard metrikleri de güncelle
         updateDashboardMetrics(sys);
 
     } catch (err) {
-        container.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Veri alınamadı: ${err.message}</p></div>`;
+        container.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Veri alınamadı.</p></div>`;
     }
 }
 
 // ─── Temp Temizle ─────────────────────────────────────────────────────────────
 async function doCleanTemp() {
-    const btn = document.getElementById('btn-clean-temp');
+    const btn    = document.getElementById('btn-clean-temp');
     const status = document.getElementById('temp-status');
     if (btn) { btn.disabled = true; btn.textContent = 'Temizleniyor...'; }
     if (status) status.textContent = 'İşlemde...';
-
     try {
         const res = await window.electronAPI.cleanTemp();
         if (status) status.textContent = res.status === 'cleaned' ? '✓ Temizlendi' : '⚠ Kısmen temizlendi';
-
-        const panel = document.getElementById('clean-result');
+        const panel   = document.getElementById('clean-result');
         const content = document.getElementById('clean-result-content');
         if (panel && content) {
             panel.style.display = 'block';
@@ -373,48 +410,39 @@ async function doCleanTemp() {
                 </div>`;
         }
         toast('Temp dosyaları temizlendi!', 'success');
-    } catch (err) {
-        if (status) status.textContent = '✗ Hata oluştu';
+    } catch (e) {
+        if (status) status.textContent = '✗ Hata';
         toast('Temizleme başarısız.', 'error');
     }
-
     if (btn) { btn.disabled = false; btn.textContent = 'Temp Dosyaları Temizle'; }
 }
 
-// ─── Downloads Aç ─────────────────────────────────────────────────────────────
+// ─── Klasör / Ayar Aç ────────────────────────────────────────────────────────
 async function openDownloads() {
-    try {
-        const res = await window.electronAPI.openFolder('downloads');
-        toast('İndirilenler klasörü açıldı.', 'success');
-    } catch (e) {
-        toast('Klasör açılamadı.', 'error');
-    }
+    try { await window.electronAPI.openFolder('downloads'); toast('İndirilenler klasörü açıldı.', 'success'); }
+    catch (_) { toast('Klasör açılamadı.', 'error'); }
 }
 
-// ─── Başlangıç Uygulamaları ───────────────────────────────────────────────────
 async function openStartupApps() {
-    try {
-        await window.electronAPI.openSettings('startup_apps');
-        toast('Windows başlangıç uygulamaları açıldı.', 'info');
-    } catch (e) {
-        toast('Ayarlar açılamadı.', 'error');
-    }
+    try { await window.electronAPI.openSettings('startup_apps'); toast('Başlangıç ayarları açıldı.', 'info'); }
+    catch (_) { toast('Ayarlar açılamadı.', 'error'); }
 }
 
 // ─── İlk Yükleme ─────────────────────────────────────────────────────────────
 (async function init() {
-    // Sağlık verilerini arka planda yükle
     try {
-        const health = await window.electronAPI.getHealth();
-        const ramPct = parseFloat(health.ram || 0);
-        document.getElementById('ram-value').textContent  = `%${ramPct}`;
-        document.getElementById('ram-sub').textContent    = 'RAM kullanımı';
-        document.getElementById('cpu-value').textContent  = 'Aktif';
-        document.getElementById('cpu-sub').textContent    = 'Sistem çalışıyor';
-        document.getElementById('disk-value').textContent = '...';
-        document.getElementById('disk-sub').textContent   = 'Tarama bekleniyor';
-        document.getElementById('uptime-value').textContent = '...';
-        setRingProgress('ram-ring', ramPct);
-        setRingProgress('cpu-ring', 40);
-    } catch (_) {}
+        // Anında çalışan hızlı taramayı başlat + dashboard doldur
+        const data = await window.electronAPI.quickScan();
+        lastScanData = data;
+        updateDashboardMetrics(data.system);
+        updateDashboardSuggestions(data.suggestions);
+        updateBadge(data.suggestions.filter(s => s.priority === 'high').length);
+    } catch (_) {
+        // Hata olursa sessizce geç
+        try {
+            const h = await window.electronAPI.getHealth();
+            document.getElementById('ram-value').textContent = `%${parseFloat(h.ram || 0)}`;
+            setRingProgress('ram-ring', parseFloat(h.ram || 0));
+        } catch (__) {}
+    }
 })();
