@@ -1,29 +1,31 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
-const os = require('os');
+const os   = require('os');
 
-// Backend modülleri
-const { getHealth } = require('./system/health');
-const { cleanTemp } = require('./system/temp');
-const { runQuickScan, runDeepScan } = require('./system/agent');
+// ─── Backend Modülleri ────────────────────────────────────────────────────────
+const { getHealth }                          = require('./system/health');
+const { cleanTemp }                          = require('./system/temp');
+const { runQuickScan, runDeepScan }          = require('./system/agent');
+const { scanNetwork, killProcessByPid }      = require('./system/network');
+const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 
 let mainWindow = null;
 
-// ─── Pencere oluştur ──────────────────────────────────────────────────────────
+// ─── Pencere Oluştur ──────────────────────────────────────────────────────────
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        minWidth: 900,
-        minHeight: 650,
-        frame: false,          // Custom titlebar
+        width: 1280,
+        height: 820,
+        minWidth: 960,
+        minHeight: 680,
+        frame: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
         },
         backgroundColor: '#0d0f1a',
-        show: false            // Hazır olunca göster (beyaz flash yok)
+        show: false,
     });
 
     mainWindow.loadFile('renderer/index.html');
@@ -37,10 +39,9 @@ function createWindow() {
     });
 }
 
-// ─── Uygulama hazır ───────────────────────────────────────────────────────────
+// ─── Uygulama Hazır ───────────────────────────────────────────────────────────
 app.whenReady().then(() => {
     createWindow();
-
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -60,20 +61,52 @@ ipcMain.on('window-close', () => mainWindow?.close());
 
 // ─── IPC: Sistem ─────────────────────────────────────────────────────────────
 ipcMain.handle('get-health', async () => getHealth());
-
 ipcMain.handle('clean-temp', async () => cleanTemp());
-
-// Hızlı Tarama — sadece OS modülü, anlık sonuç
 ipcMain.handle('quick-scan', async () => runQuickScan());
+ipcMain.handle('deep-scan',  async () => runDeepScan());
 
-// Detaylı Tarama — PowerShell sorguları, kapsamlı analiz
-ipcMain.handle('deep-scan', async () => runDeepScan());
+// ─── IPC: NetGuard (Modül 1) ─────────────────────────────────────────────────
+ipcMain.handle('scan-network', async () => {
+    return scanNetwork();
+});
 
-// ─── IPC: Dosya/Ayar İşlemleri ───────────────────────────────────────────────
+ipcMain.handle('kill-network-process', async (event, pid) => {
+    return killProcessByPid(pid);
+});
+
+// ─── IPC: Görev Zinciri (Modül 3) ────────────────────────────────────────────
+ipcMain.handle('run-task-chain', async (event, chainDef) => {
+    // Adım tamamlandığında renderer'a event göndereceğiz
+    const result = await executeChain(chainDef, (stepResult) => {
+        // UI restorasyon olayını ilet
+        if (stepResult.uiEvent && mainWindow) {
+            mainWindow.webContents.send('ui-event', stepResult.uiEvent);
+        }
+        // Adım ilerleme bilgisini ilet
+        if (mainWindow) {
+            mainWindow.webContents.send('chain-step-progress', stepResult);
+        }
+    });
+
+    // Zincir bitince UI event'lerini toplu gönder
+    if (result.uiEvents?.length > 0 && mainWindow) {
+        result.uiEvents.forEach(ev => {
+            mainWindow.webContents.send('ui-event', ev);
+        });
+    }
+
+    return result;
+});
+
+ipcMain.handle('get-one-click-chain', async () => {
+    return buildOneClickOptimizeChain();
+});
+
+// ─── IPC: Dosya / Ayar İşlemleri ─────────────────────────────────────────────
 ipcMain.handle('open-folder', async (event, folderType) => {
     let folderPath = '';
     if (folderType === 'downloads') folderPath = path.join(os.homedir(), 'Downloads');
-    else if (folderType === 'temp')      folderPath = os.tmpdir();
+    else if (folderType === 'temp') folderPath = os.tmpdir();
     if (folderPath) await shell.openPath(folderPath);
     return { opened: folderPath };
 });

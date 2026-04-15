@@ -2,27 +2,37 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
-    // Sistem sağlık bilgisi (anlık)
-    getHealth: () => ipcRenderer.invoke('get-health'),
+    // ─── Sistem Sağlık ────────────────────────────────────────────────────────
+    getHealth:    () => ipcRenderer.invoke('get-health'),
+    cleanTemp:    () => ipcRenderer.invoke('clean-temp'),
+    quickScan:    () => ipcRenderer.invoke('quick-scan'),
+    deepScan:     () => ipcRenderer.invoke('deep-scan'),
 
-    // Temp temizle
-    cleanTemp: () => ipcRenderer.invoke('clean-temp'),
+    // ─── NetGuard: Ağ Taraması (Modül 1) ─────────────────────────────────────
+    scanNetwork:           ()    => ipcRenderer.invoke('scan-network'),
+    killNetworkProcess:    (pid) => ipcRenderer.invoke('kill-network-process', pid),
 
-    // Hızlı Tarama — ~50ms, sadece OS modülü
-    quickScan: () => ipcRenderer.invoke('quick-scan'),
+    // ─── Görev Zinciri (Modül 3) ──────────────────────────────────────────────
+    runTaskChain:          (chainDef) => ipcRenderer.invoke('run-task-chain', chainDef),
+    getOneClickChain:      ()         => ipcRenderer.invoke('get-one-click-chain'),
 
-    // Detaylı Tarama — ~5-10s, PowerShell analizi
-    deepScan: () => ipcRenderer.invoke('deep-scan'),
+    // Adım bazlı ilerleme dinleyici
+    onChainStepProgress: (callback) => {
+        ipcRenderer.on('chain-step-progress', (_, data) => callback(data));
+    },
 
-    // Klasör aç
-    openFolder: (folderType) => ipcRenderer.invoke('open-folder', folderType),
+    // UI olayları dinleyici (ekosistem animasyonu vb.)
+    onUiEvent: (callback) => {
+        ipcRenderer.on('ui-event', (_, data) => callback(data));
+    },
 
-    // Sistem ayarları aç
-    openSettings: (settingType) => ipcRenderer.invoke('open-settings', settingType),
+    // ─── Klasör / Ayar ────────────────────────────────────────────────────────
+    openFolder:    (folderType)   => ipcRenderer.invoke('open-folder',   folderType),
+    openSettings:  (settingType)  => ipcRenderer.invoke('open-settings', settingType),
 
-    // Pencere kontrolleri
+    // ─── Pencere Kontrolleri ──────────────────────────────────────────────────
     minimizeWindow: () => ipcRenderer.send('window-minimize'),
     maximizeWindow: () => ipcRenderer.send('window-maximize'),
-    closeWindow:    () => ipcRenderer.send('window-close')
+    closeWindow:    () => ipcRenderer.send('window-close'),
 
 });

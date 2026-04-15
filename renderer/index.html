@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="SysGuard — Antigravity Agent ile güçlendirilmiş sistem optimizasyon ve sağlık paneli">
+    <meta name="description" content="SysGuard — Antigravity Agent ile güçlendirilmiş sistem optimizasyon, güvenlik ve ağ monitörü">
     <title>SysGuard — Antigravity Agent</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,7 +11,36 @@
 </head>
 <body>
 
-    <!-- ─── Titlebar ─────────────────────────────────────────── -->
+    <!-- ─── Ekosistem Restorasyon Overlay (Modül 2) ─────────────── -->
+    <div id="ecosystem-overlay" class="ecosystem-overlay" aria-hidden="true">
+        <canvas id="ecosystem-canvas"></canvas>
+        <div class="ecosystem-message">
+            <div class="ecosystem-icon">
+                <svg viewBox="0 0 64 64" fill="none">
+                    <circle cx="32" cy="32" r="28" stroke="url(#ecoGrad)" stroke-width="2" opacity="0.6"/>
+                    <path d="M20 32 C20 24 28 18 32 18 C36 18 44 24 44 32 C44 40 36 48 32 48 C28 48 20 40 20 32Z"
+                          fill="url(#ecoGrad)" opacity="0.15"/>
+                    <path d="M32 22 L32 32 L40 38" stroke="url(#ecoGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="32" cy="32" r="3" fill="url(#ecoGrad)"/>
+                    <defs>
+                        <linearGradient id="ecoGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#06b6d4"/>
+                            <stop offset="100%" stop-color="#818cf8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            <h2 id="ecosystem-title">Sistem Nefes Aldı</h2>
+            <p id="ecosystem-subtitle">Dijital ekosistem başarıyla restore edildi</p>
+            <div class="ecosystem-stats" id="ecosystem-stats"></div>
+            <button class="btn-primary" onclick="closeEcosystemOverlay()" id="btn-eco-close">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                Harika!
+            </button>
+        </div>
+    </div>
+
+    <!-- ─── Titlebar ─────────────────────────────────────────────── -->
     <div class="titlebar" id="titlebar">
         <div class="titlebar-left">
             <div class="app-logo">
@@ -30,6 +59,11 @@
             <span class="app-name">SysGuard</span>
             <span class="app-badge">Antigravity Agent</span>
         </div>
+        <!-- Ekosistem Durum Göstergesi -->
+        <div class="ecosystem-status-bar" id="ecosystem-status-bar">
+            <div class="eco-dot" id="eco-dot"></div>
+            <span id="eco-status-text">Sistem izleniyor</span>
+        </div>
         <div class="titlebar-controls">
             <button class="title-btn" id="btn-minimize" onclick="window.electronAPI.minimizeWindow()" title="Küçült">
                 <svg viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -43,7 +77,7 @@
         </div>
     </div>
 
-    <!-- ─── Ana Layout ───────────────────────────────────────── -->
+    <!-- ─── Ana Layout ───────────────────────────────────────────── -->
     <div class="layout">
 
         <!-- Sidebar -->
@@ -61,6 +95,15 @@
                 <button class="nav-item" id="nav-health" onclick="showTab('health')" title="Sistem Sağlığı">
                     <svg viewBox="0 0 24 24" fill="none"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     <span>Sağlık</span>
+                </button>
+                <button class="nav-item" id="nav-netguard" onclick="showTab('netguard')" title="NetGuard — Ağ Güvenliği">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    <span>NetGuard</span>
+                    <span class="nav-badge danger" id="netguard-badge" style="display:none">!</span>
+                </button>
+                <button class="nav-item" id="nav-chain" onclick="showTab('chain')" title="Görev Zinciri">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    <span>Otomasyon</span>
                 </button>
                 <button class="nav-item" id="nav-clean" onclick="showTab('clean')" title="Temizlik">
                     <svg viewBox="0 0 24 24" fill="none"><path d="M3 6l3 1m0 0l-3 9a5 5 0 006.027 6h0A5 5 0 0012 18v0M6 7l3-3m0 0l9 9m-9-9l3 3M21 11h-3m-3 0h.01M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -85,10 +128,28 @@
                         <h1>Sistem Paneli</h1>
                         <p class="page-subtitle">Genel sistem durumunuza genel bir bakış</p>
                     </div>
-                    <button class="btn-primary" id="btn-scan-dashboard" onclick="runQuickScanUI()">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                        Hızlı Tara
-                    </button>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                        <button class="btn-secondary" id="btn-one-click-dashboard" onclick="runOneClickOptimize()">
+                            <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Tek Tıkla Optimize
+                        </button>
+                        <button class="btn-primary" id="btn-scan-dashboard" onclick="runQuickScanUI()">
+                            <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                            Hızlı Tara
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Ekosistem Sağlık Barı (Modül 2) -->
+                <div class="ecosystem-health-bar-wrapper" id="eco-health-wrapper">
+                    <div class="ecosystem-health-label">
+                        <span>Sistem Sağlığı</span>
+                        <span id="eco-health-pct">—</span>
+                    </div>
+                    <div class="ecosystem-health-track">
+                        <div class="ecosystem-health-fill" id="eco-health-fill" style="width:0%"></div>
+                    </div>
+                    <div class="ecosystem-state-label" id="eco-state-label">Analiz bekleniyor...</div>
                 </div>
 
                 <!-- Metric Cards -->
@@ -279,11 +340,116 @@
                     </button>
                 </div>
                 <div id="health-content">
-                    <div class="empty-state">
-                        <div class="spinner"></div>
-                        <p>Yükleniyor...</p>
+                    <div class="empty-state"><div class="spinner"></div><p>Yükleniyor...</p></div>
+                </div>
+            </section>
+
+            <!-- ─── TAB: NetGuard ─────────────────────────── -->
+            <section class="tab" id="tab-netguard">
+                <div class="page-header">
+                    <div>
+                        <h1>NetGuard — Ağ Güvenliği</h1>
+                        <p class="page-subtitle">TCP/UDP bağlantıları, şüpheli portlar ve anormal veri tespiti</p>
+                    </div>
+                    <button class="btn-primary" id="btn-scan-network" onclick="runNetworkScan()">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        Ağı Tara
+                    </button>
+                </div>
+                <div id="netguard-content">
+                    <div class="empty-state large">
+                        <svg viewBox="0 0 64 64" fill="none" width="64" height="64">
+                            <path d="M32 8 L56 20 L56 36 C56 48 44 58 32 62 C20 58 8 48 8 36 L8 20 Z" stroke="url(#ngGrad)" stroke-width="2" fill="none"/>
+                            <path d="M22 32 l6 6 12-12" stroke="url(#ngGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                            <defs><linearGradient id="ngGrad" x1="8" y1="8" x2="56" y2="62" gradientUnits="userSpaceOnUse"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+                        </svg>
+                        <h3>NetGuard Hazır</h3>
+                        <p>Ağ bağlantılarını analiz etmek için "Ağı Tara" butonuna tıklayın.</p>
+                        <p style="font-size:11px;color:var(--text-muted);margin-top:4px">Şüpheli portlar, tanımsız işlemler ve veri sızıntıları tespit edilir.</p>
                     </div>
                 </div>
+            </section>
+
+            <!-- ─── TAB: TaskChain / Otomasyon ───────────── -->
+            <section class="tab" id="tab-chain">
+                <div class="page-header">
+                    <div>
+                        <h1>AI Ajan Otomasyonu</h1>
+                        <p class="page-subtitle">Tek onay ile çok adımlı optimizasyon zincirleri</p>
+                    </div>
+                    <button class="btn-primary" id="btn-run-chain" onclick="runOneClickOptimize()">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Zinciri Başlat
+                    </button>
+                </div>
+
+                <!-- Zincir Tanımı Önizleme -->
+                <div class="chain-definition-card">
+                    <div class="chain-def-header">
+                        <div class="chain-def-icon">
+                            <svg viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="url(#chainGrad)" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="url(#chainGrad)" stroke-width="1.8" stroke-linecap="round"/><defs><linearGradient id="chainGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs></svg>
+                        </div>
+                        <div>
+                            <div class="chain-def-title">Tek Tıkla Tam Optimize</div>
+                            <div class="chain-def-sub">auto_heal_sequence_01 · 4 adım</div>
+                        </div>
+                        <span class="priority-chip medium" style="margin-left:auto">Otomatik Planlı</span>
+                    </div>
+                    <div class="chain-steps-preview">
+                        <div class="chain-step-item" data-step="1">
+                            <div class="chain-step-num">1</div>
+                            <div class="chain-step-info">
+                                <div class="chain-step-name">Boşta Güncelleme Servisleri Sonlandır</div>
+                                <div class="chain-step-detail">Gereksiz sistem güncelleme işlemlerini durdur → Bellek boşalt</div>
+                            </div>
+                            <div class="chain-step-status" id="cstep-1">Bekliyor</div>
+                        </div>
+                        <div class="chain-step-connector"></div>
+                        <div class="chain-step-item" data-step="2">
+                            <div class="chain-step-num">2</div>
+                            <div class="chain-step-info">
+                                <div class="chain-step-name">Ağ Trafiğini Tara (NetGuard)</div>
+                                <div class="chain-step-detail">Şüpheli bağlantılar ve anormal veri çıkışını kontrol et</div>
+                            </div>
+                            <div class="chain-step-status" id="cstep-2">Bekliyor</div>
+                        </div>
+                        <div class="chain-step-connector"></div>
+                        <div class="chain-step-item" data-step="3">
+                            <div class="chain-step-num">3</div>
+                            <div class="chain-step-info">
+                                <div class="chain-step-name">Geçici Dosyaları Temizle</div>
+                                <div class="chain-step-detail">C:\Windows\Temp ve sistem temp klasörlerini boşalt</div>
+                            </div>
+                            <div class="chain-step-status" id="cstep-3">Bekliyor</div>
+                        </div>
+                        <div class="chain-step-connector"></div>
+                        <div class="chain-step-item" data-step="4">
+                            <div class="chain-step-num">4</div>
+                            <div class="chain-step-info">
+                                <div class="chain-step-name">Ekosistem Restorasyonu</div>
+                                <div class="chain-step-detail">Sistem sağlığını görselleştir, tatmin animasyonunu tetikle</div>
+                            </div>
+                            <div class="chain-step-status" id="cstep-4">Bekliyor</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zincir Çalışıyor -->
+                <div id="chain-running" style="display:none">
+                    <div class="chain-progress-card">
+                        <div class="chain-progress-header">
+                            <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
+                            <span id="chain-progress-text">Zincir çalışıyor...</span>
+                        </div>
+                        <div class="chain-progress-bar-track">
+                            <div class="chain-progress-bar-fill" id="chain-progress-bar" style="width:0%"></div>
+                        </div>
+                        <div class="chain-log" id="chain-log"></div>
+                    </div>
+                </div>
+
+                <!-- Zincir Sonucu -->
+                <div id="chain-result" style="display:none"></div>
             </section>
 
             <!-- ─── TAB: Clean ────────────────────────────── -->
