@@ -313,6 +313,10 @@ function renderNetworkResults(data) {
                         <svg viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                         Bağlantıyı Kes
                     </button>` : ''}
+                    ${a.type === 'high_risk_port' && a.port ? `<button class="btn-action" onclick="blockNetPort(${a.port}, this)">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        Portu Engelle
+                    </button>` : ''}
                     <button class="btn-action" onclick="toast('Bağlantı izleniyor.', 'info')">
                         Gözle
                     </button>
@@ -352,14 +356,40 @@ async function killNetProcess(pid, btn) {
     if (btn) { btn.disabled = true; btn.textContent = 'Kesiliyor...'; }
     try {
         const res = await window.electronAPI.killNetworkProcess(pid);
-        toast(res.success ? 'Bağlantı kesildi.' : 'Bağlantı kesilemedi.', res.success ? 'success' : 'error');
-        if (res.success && btn) {
-            btn.closest('.ng-alert-card').style.opacity = '0.4';
+        if (res.success) {
+            toast('Bağlantı kesildi — işlem sonlandırıldı.', 'success');
+            if (btn) {
+                btn.textContent = '✓ Kesildi';
+                const card = btn.closest('.ng-alert-card');
+                if (card) card.style.opacity = '0.4';
+                // Başarılı kesimden sonra butonu kalıcı devre dışı bırak
+            }
+        } else {
+            toast('Bağlantı kesilemedi — yetki yetersiz olabilir.', 'error');
+            if (btn) btn.disabled = false;
         }
     } catch (_) {
         toast('İşlem sonlandırılamadı.', 'error');
+        if (btn) btn.disabled = false;
     }
-    if (btn) { btn.disabled = false; }
+}
+
+async function blockNetPort(port, btn) {
+    if (!port) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Engelleniyor...'; }
+    try {
+        const res = await window.electronAPI.blockPort(port);
+        if (res.success) {
+            toast(`Port ${port} güvenlik duvarı kuralıyla engellendi.`, 'success');
+            if (btn) { btn.textContent = '✓ Engellendi'; }
+        } else {
+            toast(`Port ${port} engellenemedi — yönetici yetkisi gerekebilir.`, 'error');
+            if (btn) btn.disabled = false;
+        }
+    } catch (_) {
+        toast('Port engellenemedi.', 'error');
+        if (btn) btn.disabled = false;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -924,7 +954,10 @@ async function doCleanTemp() {
     if (status) status.textContent = 'İşlemde...';
     try {
         const res = await window.electronAPI.cleanTemp();
-        if (status) status.textContent = res.status === 'cleaned' ? '✓ Temizlendi' : '⚠ Kısmen temizlendi';
+        const mb  = res.freedMB || 0;
+        if (status) status.textContent = res.status === 'cleaned'
+            ? `✓ Temizlendi — ${mb} MB boşaltıldı`
+            : '⚠ Kısmen temizlendi';
         const panel   = document.getElementById('clean-result');
         const content = document.getElementById('clean-result-content');
         if (panel && content) {
@@ -932,12 +965,11 @@ async function doCleanTemp() {
             content.innerHTML = `
                 <div class="result-success">
                     <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>
-                    <span>Geçici dosyalar başarıyla temizlendi!</span>
+                    <span>Geçici dosyalar temizlendi!${mb > 0 ? ` ${mb} MB boşaltıldı, ${res.deletedCount || 0} dosya silindi.` : ''}</span>
                 </div>`;
         }
-        toast('Temp dosyaları temizlendi!', 'success');
-        // 1GB+ temizlendiyse ekosistem animasyonunu tetikle
-        triggerEcosystemRestore({ subtitle: 'Sistem temizliği tamamlandı — Disk alanı boşaltıldı' });
+        toast(`Temp temizliği tamamlandı — ${mb} MB boşaltıldı!`, 'success');
+        triggerEcosystemRestore({ freedMB: mb, subtitle: 'Sistem temizliği tamamlandı — Disk alanı boşaltıldı' });
     } catch (e) {
         if (status) status.textContent = '✗ Hata';
         toast('Temizleme başarısız.', 'error');

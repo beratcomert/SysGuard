@@ -131,7 +131,7 @@ function scanNetwork() {
         portMap[port].add(procName);
 
         // "İsimsiz" veya bilinmeyen işlem kontrolü
-        const isKnownSafe = SAFE_PROCS.has(procName) || procName === 'unknown';
+        const isKnownSafe = SAFE_PROCS.has(procName);
         const isHighRisk  = HIGH_RISK_PORTS.has(port);
         const isOutbound  = conn.remoteAddr && conn.remoteAddr !== '0.0.0.0' && conn.remoteAddr !== '::';
         const isPublicIP  = isOutbound && !isPrivateIP(conn.remoteAddr);
@@ -203,12 +203,31 @@ function scanNetwork() {
  * Belirli bir PID'yi sonlandır (process kill)
  */
 function killProcessByPid(pid) {
-    try {
-        runPS(`Stop-Process -Id ${parseInt(pid)} -Force`);
-        return { success: true, pid };
-    } catch (_) {
-        return { success: false, pid };
-    }
+    const safePid = parseInt(pid);
+    if (!safePid || safePid <= 4) return { success: false, pid, error: 'Geçersiz PID' };
+
+    runPS(`Stop-Process -Id ${safePid} -Force -ErrorAction SilentlyContinue`);
+
+    // Prosesin hâlâ çalışıp çalışmadığını doğrula
+    const check = runPS(
+        `if (Get-Process -Id ${safePid} -ErrorAction SilentlyContinue) { 'running' } else { 'gone' }`
+    );
+    const killed = !check || check.trim() === 'gone';
+    return { success: killed, pid };
+}
+
+/**
+ * Belirli bir portu Windows Güvenlik Duvarı kuralıyla engelle
+ */
+function blockPort(port) {
+    const safePort = parseInt(port);
+    if (!safePort || safePort < 1 || safePort > 65535) return { success: false, port };
+    const ruleName = `SysGuard_Block_${safePort}`;
+    const result = runPS(
+        `netsh advfirewall firewall add rule name="${ruleName}" ` +
+        `dir=in action=block protocol=tcp localport=${safePort}`
+    );
+    return { success: result !== null, port: safePort, ruleName };
 }
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
@@ -234,4 +253,4 @@ function humanReadableProcess(name) {
     return friendly[name] || name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-module.exports = { scanNetwork, killProcessByPid };
+module.exports = { scanNetwork, killProcessByPid, blockPort };

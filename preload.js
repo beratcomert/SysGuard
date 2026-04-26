@@ -9,8 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deepScan:     () => ipcRenderer.invoke('deep-scan'),
 
     // ─── NetGuard: Ağ Taraması (Modül 1) ─────────────────────────────────────
-    scanNetwork:           ()    => ipcRenderer.invoke('scan-network'),
-    killNetworkProcess:    (pid) => ipcRenderer.invoke('kill-network-process', pid),
+    scanNetwork:           ()     => ipcRenderer.invoke('scan-network'),
+    killNetworkProcess:    (pid)  => ipcRenderer.invoke('kill-network-process', pid),
+    blockPort:             (port) => ipcRenderer.invoke('block-port', port),
 
     // ─── Görev Zinciri (Modül 3) ──────────────────────────────────────────────
     runTaskChain:          (chainDef) => ipcRenderer.invoke('run-task-chain', chainDef),

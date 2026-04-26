@@ -6,7 +6,7 @@ const os   = require('os');
 const { getHealth }                          = require('./system/health');
 const { cleanTemp }                          = require('./system/temp');
 const { runQuickScan, runDeepScan }          = require('./system/agent');
-const { scanNetwork, killProcessByPid }      = require('./system/network');
+const { scanNetwork, killProcessByPid, blockPort } = require('./system/network');
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 
 let mainWindow = null;
@@ -72,6 +72,10 @@ ipcMain.handle('scan-network', async () => {
 
 ipcMain.handle('kill-network-process', async (event, pid) => {
     return killProcessByPid(pid);
+});
+
+ipcMain.handle('block-port', async (event, port) => {
+    return blockPort(port);
 });
 
 // ─── IPC: Görev Zinciri (Modül 3) ────────────────────────────────────────────

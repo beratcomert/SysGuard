@@ -52,18 +52,29 @@ async function action_clear_temp_files(step) {
 
 async function action_kill_process(step) {
     const target = step.target || '';
-    // "idle_update_services" gibi anahtar kelimelerle eşleme
     const killMap = {
         idle_update_services: ['wuauclt', 'usocoreworker', 'musnotification', 'compattelrunner'],
         browser_background:   ['chrome', 'msedge', 'firefox'],
     };
     const targets = killMap[target] || [target];
-    let killed = 0;
+    let killed = 0, notFound = 0;
     for (const name of targets) {
-        const result = runPS(`Stop-Process -Name '${name}' -Force -ErrorAction SilentlyContinue`);
-        killed++;
+        const countRaw = runPS(
+            `(Get-Process -Name '${name}' -ErrorAction SilentlyContinue | Measure-Object).Count`
+        );
+        if (parseInt(countRaw) > 0) {
+            runPS(`Stop-Process -Name '${name}' -Force -ErrorAction SilentlyContinue`);
+            killed++;
+        } else {
+            notFound++;
+        }
     }
-    return { success: true, detail: `${targets.join(', ')} işlemleri sonlandırıldı (${killed} hedef).` };
+    return {
+        success: true,
+        detail: killed > 0
+            ? `${killed} işlem sonlandırıldı (${notFound} zaten çalışmıyordu).`
+            : `Hedef işlemler zaten çalışmıyordu (${notFound} kontrol edildi).`,
+    };
 }
 
 async function action_scan_network(step) {
@@ -88,9 +99,34 @@ async function action_trigger_ui_restoration_animation(step) {
 }
 
 async function action_optimize_disk(step) {
+    const toClean = [
+        path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'Temp'),
+        path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'Prefetch'),
+    ];
+
+    let deleted = 0, skipped = 0, freedBytes = 0;
+
+    for (const dir of toClean) {
+        try {
+            const files = fs.readdirSync(dir);
+            for (const f of files) {
+                const fp = path.join(dir, f);
+                try {
+                    try { freedBytes += fs.statSync(fp).size || 0; } catch (_) {}
+                    fs.rmSync(fp, { recursive: true, force: true });
+                    deleted++;
+                } catch (_) {
+                    skipped++;
+                }
+            }
+        } catch (_) {}
+    }
+
+    const freedMB = parseFloat((freedBytes / 1024 / 1024).toFixed(1));
     return {
         success: true,
-        detail: 'Disk optimizasyon komutu gönderildi (Windows Disk Temizleme).',
+        detail: `Disk temizliği tamamlandı: ${deleted} dosya silindi, ${skipped} atlandı. ${freedMB} MB boşaltıldı.`,
+        freedMB,
     };
 }
 
