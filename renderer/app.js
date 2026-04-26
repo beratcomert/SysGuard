@@ -89,13 +89,16 @@ function calcHealthScore(scanData) {
     const ram  = scanData.system.ram?.usagePercent || 50;
     const disk = scanData.system.disk?.drives?.find(d => d.name === 'C')?.usagePercent || 50;
     const high = (scanData.suggestions || []).filter(s => s.priority === 'high').length;
+    const med  = (scanData.suggestions || []).filter(s => s.priority === 'medium').length;
 
-    // RAM %50 + Disk %30 + Uyarılar %20
-    const ramScore  = Math.max(0, 100 - ram);
-    const diskScore = Math.max(0, 100 - disk);
-    const warnScore = Math.max(0, 100 - (high * 15));
+    // Gerçekçi eğri: %40 RAM altı = tam puan, %100'de sıfır
+    const ramScore  = Math.max(0, 100 - Math.max(0, ram  - 40) * (100 / 60));
+    // Disk: %50 altı = tam puan, %100'de sıfır
+    const diskScore = Math.max(0, 100 - Math.max(0, disk - 50) * (100 / 50));
+    // Uyarılar: her yüksek -12, her orta -5
+    const warnScore = Math.max(0, 100 - (high * 12) - (med * 5));
 
-    return Math.round(ramScore * 0.5 + diskScore * 0.3 + warnScore * 0.2);
+    return Math.round(ramScore * 0.45 + diskScore * 0.30 + warnScore * 0.25);
 }
 
 // ─── Canvas Parçacık Animasyonu ───────────────────────────────────────────────
@@ -200,6 +203,7 @@ function closeEcosystemOverlay() {
     const overlay = document.getElementById('ecosystem-overlay');
     if (overlay) overlay.classList.remove('active');
     stopEcoCanvas();
+    if (lastScanData) updateEcosystemState(calcHealthScore(lastScanData));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -413,7 +417,7 @@ async function runOneClickOptimize() {
 
     // Adım durumlarını sıfırla
     chainStepStatusMap = {};
-    [1, 2, 3, 4].forEach(i => {
+    [1, 2, 3, 4, 5].forEach(i => {
         const el = document.getElementById(`cstep-${i}`);
         if (el) el.textContent = 'Bekliyor';
         const item = document.querySelector(`.chain-step-item[data-step="${i}"]`);
@@ -458,6 +462,7 @@ async function runOneClickOptimize() {
         }
 
         toast(`Zincir tamamlandı: ${result.completedSteps}/${result.totalSteps} adım başarılı`, 'success');
+        refreshScanDataSilent();
     } catch (err) {
         if (runDiv) runDiv.style.display = 'none';
         toast('Zincir çalıştırılamadı: ' + err.message, 'error');
@@ -474,7 +479,7 @@ async function runOneClickOptimize() {
 function updateChainStepUI(step) {
     chainStepStatusMap[step.step_order] = step;
 
-    const totalSteps = 4;
+    const totalSteps = 5;
     const done       = Object.values(chainStepStatusMap).filter(s => s.status !== 'running').length;
     const pct        = Math.round((done / totalSteps) * 100);
 
@@ -574,6 +579,19 @@ function renderChainResult(result) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MEVCUT KOD (Önceki modüllerden korundu + Ekosistem entegrasyonu eklendi)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Arkaplan Tarama Yenileme ─────────────────────────────────────────────────
+async function refreshScanDataSilent() {
+    try {
+        const data = await window.electronAPI.quickScan();
+        lastScanData = data;
+        updateDashboardMetrics(data.system);
+        updateDashboardSuggestions(data.suggestions);
+        updateBadge(data.suggestions.filter(s => s.priority === 'high').length);
+        const score = calcHealthScore(data);
+        updateEcosystemState(score);
+    } catch (_) {}
+}
 
 // ─── Toast Bildirimleri ───────────────────────────────────────────────────────
 function toast(message, type = 'info') {
@@ -971,6 +989,7 @@ async function doCleanTemp() {
         }
         toast(`Temp temizliği tamamlandı — ${mb} MB boşaltıldı!`, 'success');
         triggerEcosystemRestore({ freedMB: mb, subtitle: 'Sistem temizliği tamamlandı — Disk alanı boşaltıldı' });
+        refreshScanDataSilent();
     } catch (e) {
         if (status) status.textContent = '✗ Hata';
         toast('Temizleme başarısız.', 'error');

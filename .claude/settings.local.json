@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node -e \"require\\('./system/antivirus'\\); console.log\\('antivirus module OK'\\)\")",
-      "Bash(node -e \"require\\('./main.js'\\)\")"
+      "Bash(node -e \"require\\('./main.js'\\)\")",
+      "Bash(node -e \"const c = require\\('./system/chain'\\); const chain = c.buildOneClickOptimizeChain\\(\\); console.log\\('Steps:', chain.steps.length\\); chain.steps.forEach\\(s => console.log\\(' ', s.step_order, s.action\\)\\);\")"
     ]
   }
 }

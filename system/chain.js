@@ -24,30 +24,34 @@ function runPS(cmd) {
 // ─── Eylem Uygulayıcılar ─────────────────────────────────────────────────────
 
 async function action_clear_temp_files(step) {
-    const target = step.target || os.tmpdir();
+    const dirs = [
+        os.tmpdir(),
+        path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'Temp'),
+    ];
+    if (step.target && !dirs.includes(step.target)) dirs.push(step.target);
+
     let deleted = 0, skipped = 0, freedBytes = 0;
-    try {
-        const files = fs.readdirSync(target);
-        for (const f of files) {
-            const fp = path.join(target, f);
-            try {
-                const stat = fs.statSync(fp);
-                freedBytes += stat.size;
-                fs.rmSync(fp, { recursive: true, force: true });
-                deleted++;
-            } catch (_) {
-                skipped++;
+    for (const target of dirs) {
+        try {
+            const files = fs.readdirSync(target);
+            for (const f of files) {
+                const fp = path.join(target, f);
+                try {
+                    try { freedBytes += fs.statSync(fp).size || 0; } catch (_) {}
+                    fs.rmSync(fp, { recursive: true, force: true });
+                    deleted++;
+                } catch (_) {
+                    skipped++;
+                }
             }
-        }
-        return {
-            success: true,
-            detail: `${deleted} dosya silindi, ${skipped} atlandı. Boşaltılan alan: ${(freedBytes / 1024 / 1024).toFixed(1)} MB`,
-            freedMB: parseFloat((freedBytes / 1024 / 1024).toFixed(1)),
-            deletedCount: deleted,
-        };
-    } catch (e) {
-        return { success: false, detail: `Temp dizini erişim hatası: ${e.message}`, freedMB: 0, deletedCount: 0 };
+        } catch (_) {}
     }
+    return {
+        success: true,
+        detail: `${deleted} dosya silindi, ${skipped} atlandı. Boşaltılan alan: ${(freedBytes / 1024 / 1024).toFixed(1)} MB`,
+        freedMB: parseFloat((freedBytes / 1024 / 1024).toFixed(1)),
+        deletedCount: deleted,
+    };
 }
 
 async function action_kill_process(step) {
@@ -99,9 +103,15 @@ async function action_trigger_ui_restoration_animation(step) {
 }
 
 async function action_optimize_disk(step) {
+    const winRoot   = process.env.SYSTEMROOT || 'C:\\Windows';
+    const userLocal = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+
     const toClean = [
-        path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'Temp'),
-        path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'Prefetch'),
+        path.join(winRoot,   'Prefetch'),
+        path.join(winRoot,   'SoftwareDistribution', 'Download'),
+        path.join(userLocal, 'Temp'),
+        path.join(userLocal, 'Microsoft', 'Windows', 'INetCache'),
+        path.join(userLocal, 'Microsoft', 'Windows', 'Explorer', 'ThumbCacheToDelete'),
     ];
 
     let deleted = 0, skipped = 0, freedBytes = 0;
@@ -121,6 +131,9 @@ async function action_optimize_disk(step) {
             }
         } catch (_) {}
     }
+
+    // DNS önbelleği temizle
+    try { runPS('Clear-DnsClientCache'); } catch (_) {}
 
     const freedMB = parseFloat((freedBytes / 1024 / 1024).toFixed(1));
     return {
@@ -234,10 +247,11 @@ function buildOneClickOptimizeChain() {
         chain_id: 'auto_heal_sequence_01',
         trigger: 'user_one_click_optimize',
         steps: [
-            { step_order: 1, action: 'kill_process',                   target: 'idle_update_services' },
-            { step_order: 2, action: 'scan_network'                                                   },
-            { step_order: 3, action: 'clear_temp_files',               target: os.tmpdir()            },
-            { step_order: 4, action: 'trigger_ui_restoration_animation', level: 'maximum'             },
+            { step_order: 1, action: 'kill_process',                     target: 'idle_update_services' },
+            { step_order: 2, action: 'scan_network'                                                     },
+            { step_order: 3, action: 'clear_temp_files'                                                 },
+            { step_order: 4, action: 'optimize_disk'                                                    },
+            { step_order: 5, action: 'trigger_ui_restoration_animation', level: 'maximum'               },
         ],
     };
 }
