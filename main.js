@@ -8,6 +8,7 @@ const { cleanTemp }                          = require('./system/temp');
 const { runQuickScan, runDeepScan }          = require('./system/agent');
 const { scanNetwork, killProcessByPid, blockPort } = require('./system/network');
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
+const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats } = require('./system/antivirus');
 
 let mainWindow = null;
 
@@ -113,6 +114,21 @@ ipcMain.handle('open-folder', async (event, folderType) => {
     else if (folderType === 'temp') folderPath = os.tmpdir();
     if (folderPath) await shell.openPath(folderPath);
     return { opened: folderPath };
+});
+
+// ─── IPC: Antivirus (Modül 4) ────────────────────────────────────────────────
+ipcMain.handle('av-get-status', async () => {
+    return getDefenderStatus();
+});
+
+ipcMain.handle('av-quick-scan', async () => {
+    return avRunQuickScan((progress) => {
+        if (mainWindow) mainWindow.webContents.send('av-scan-progress', progress);
+    });
+});
+
+ipcMain.handle('av-clean-threats', async () => {
+    return cleanThreats();
 });
 
 ipcMain.handle('open-settings', async (event, settingType) => {

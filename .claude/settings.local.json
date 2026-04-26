@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\('./system/antivirus'\\); console.log\\('antivirus module OK'\\)\")",
+      "Bash(node -e \"require\\('./main.js'\\)\")"
+    ]
+  }
+}

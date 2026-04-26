@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="SysGuard — Antigravity Agent ile güçlendirilmiş sistem optimizasyon, güvenlik ve ağ monitörü">
-    <title>SysGuard — Antigravity Agent</title>
+    <meta name="description" content="SysGuard ile güçlendirilmiş sistem optimizasyon, güvenlik ve ağ monitörü">
+    <title>SysGuard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -57,7 +57,6 @@
                 </svg>
             </div>
             <span class="app-name">SysGuard</span>
-            <span class="app-badge">Antigravity Agent</span>
         </div>
         <!-- Ekosistem Durum Göstergesi -->
         <div class="ecosystem-status-bar" id="ecosystem-status-bar">
@@ -104,6 +103,11 @@
                 <button class="nav-item" id="nav-chain" onclick="showTab('chain')" title="Görev Zinciri">
                     <svg viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                     <span>Otomasyon</span>
+                </button>
+                <button class="nav-item" id="nav-antivirus" onclick="showTab('antivirus')" title="Antivirüs">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    <span>Antivirüs</span>
+                    <span class="nav-badge danger" id="av-badge" style="display:none">!</span>
                 </button>
                 <button class="nav-item" id="nav-clean" onclick="showTab('clean')" title="Temizlik">
                     <svg viewBox="0 0 24 24" fill="none"><path d="M3 6l3 1m0 0l-3 9a5 5 0 006.027 6h0A5 5 0 0012 18v0M6 7l3-3m0 0l9 9m-9-9l3 3M21 11h-3m-3 0h.01M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -450,6 +454,60 @@
 
                 <!-- Zincir Sonucu -->
                 <div id="chain-result" style="display:none"></div>
+            </section>
+
+            <!-- ─── TAB: Antivirus ───────────────────────── -->
+            <section class="tab" id="tab-antivirus">
+                <div class="page-header">
+                    <div>
+                        <h1>Antivirüs Tarayıcı</h1>
+                        <p class="page-subtitle">Windows Defender ile tehdit tarama ve temizleme</p>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                        <button class="btn-secondary" id="btn-av-status" onclick="checkAvStatus()">
+                            <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                            Durumu Kontrol Et
+                        </button>
+                        <button class="btn-primary" id="btn-av-scan" onclick="runAvScanUI()">
+                            <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                            Hızlı Tarama
+                            <span class="scan-badge secondary">~5-30dk</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tarama ilerlemesi -->
+                <div id="av-scanning" style="display:none">
+                    <div class="agent-scanning">
+                        <div class="scan-animation">
+                            <div class="scan-ring r1"></div>
+                            <div class="scan-ring r2"></div>
+                            <div class="scan-ring r3"></div>
+                            <div class="scan-icon">
+                                <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="url(#avScanGrad)" stroke-width="1.5"/><defs><linearGradient id="avScanGrad"><stop stop-color="#f472b6"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs></svg>
+                            </div>
+                        </div>
+                        <p class="scan-text" id="av-scan-text">Windows Defender taraması çalışıyor...</p>
+                        <p class="scan-sub" id="av-scan-sub">Bu işlem birkaç dakika sürebilir, lütfen bekleyin</p>
+                        <div class="chain-progress-bar-track" style="max-width:360px;margin:16px auto 0">
+                            <div class="chain-progress-bar-fill" id="av-progress-bar" style="width:5%"></div>
+                        </div>
+                        <div id="av-progress-pct" style="text-align:center;font-size:11px;color:var(--text-muted);margin-top:6px">%5</div>
+                    </div>
+                </div>
+
+                <!-- İçerik -->
+                <div id="av-content">
+                    <div class="empty-state large">
+                        <svg viewBox="0 0 64 64" fill="none" width="64" height="64">
+                            <path d="M32 8 L56 20 L56 36 C56 48 44 58 32 62 C20 58 8 48 8 36 L8 20 Z" stroke="url(#avEmptyGrad)" stroke-width="2" fill="none"/>
+                            <path d="M24 28l6 6 12-12" stroke="url(#avEmptyGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                            <defs><linearGradient id="avEmptyGrad" x1="8" y1="8" x2="56" y2="62" gradientUnits="userSpaceOnUse"><stop stop-color="#f472b6"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+                        </svg>
+                        <h3>Antivirüs Hazır</h3>
+                        <p>"Durumu Kontrol Et" ile mevcut tehditleri görün veya "Hızlı Tarama" ile tam analiz yapın.</p>
+                    </div>
+                </div>
             </section>
 
             <!-- ─── TAB: Clean ────────────────────────────── -->

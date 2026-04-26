@@ -613,6 +613,7 @@ function showTab(name) {
     document.getElementById(`tab-${name}`)?.classList.add('active');
     document.getElementById(`nav-${name}`)?.classList.add('active');
     if (name === 'health') refreshHealth();
+    if (name === 'antivirus') avAutoStatus();
 }
 
 // ─── Kategori Simgesi ─────────────────────────────────────────────────────────
@@ -986,6 +987,207 @@ async function openDownloads() {
 async function openStartupApps() {
     try { await window.electronAPI.openSettings('startup_apps'); toast('Başlangıç ayarları açıldı.', 'info'); }
     catch (_) { toast('Ayarlar açılamadı.', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODÜL 4 — Antivirüs UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let avScanning = false;
+
+// Register scan progress listener once
+if (window.electronAPI?.onAvScanProgress) {
+    window.electronAPI.onAvScanProgress((prog) => {
+        const bar  = document.getElementById('av-progress-bar');
+        const pct  = document.getElementById('av-progress-pct');
+        const text = document.getElementById('av-scan-text');
+        const sub  = document.getElementById('av-scan-sub');
+        if (bar) bar.style.width = `${prog.percent}%`;
+        if (pct) pct.textContent = `%${prog.percent}`;
+        const phaseMap = {
+            starting:   ['Windows Defender başlatılıyor...', 'Tarama motoru hazırlanıyor'],
+            scanning:   ['Sistem taranıyor...', 'Dosyalar virüs imzalarıyla karşılaştırılıyor'],
+            collecting: ['Sonuçlar toplanıyor...', 'Tehdit bilgileri alınıyor'],
+            checking:   ['Mevcut tehditler kontrol ediliyor...', 'Defender veritabanı sorgulanıyor'],
+            done:       ['Tarama tamamlandı', 'Sonuçlar hazırlanıyor...'],
+        };
+        const [t, s] = phaseMap[prog.phase] || ['Taranıyor...', ''];
+        if (text) text.textContent = t;
+        if (sub)  sub.textContent  = s;
+    });
+}
+
+function avSetBusy(busy) {
+    avScanning = busy;
+    ['btn-av-scan', 'btn-av-status'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = busy;
+    });
+    const scanEl    = document.getElementById('av-scanning');
+    const contentEl = document.getElementById('av-content');
+    if (scanEl)    scanEl.style.display    = busy ? 'block' : 'none';
+    if (contentEl) contentEl.style.display = busy ? 'none'  : 'block';
+}
+
+async function checkAvStatus() {
+    if (avScanning) return;
+    avSetBusy(true);
+    try {
+        const data = await window.electronAPI.avGetStatus();
+        renderAvResults(data, 'status');
+    } catch (err) {
+        document.getElementById('av-content').innerHTML =
+            `<div class="empty-state"><p style="color:var(--priority-high)">Durum alınamadı: ${err.message}</p></div>`;
+    }
+    avSetBusy(false);
+}
+
+async function runAvScanUI() {
+    if (avScanning) { toast('Tarama zaten devam ediyor.', 'info'); return; }
+    avSetBusy(true);
+    const bar = document.getElementById('av-progress-bar');
+    const pct = document.getElementById('av-progress-pct');
+    if (bar) bar.style.width = '5%';
+    if (pct) pct.textContent = '%5';
+    try {
+        toast('Windows Defender taraması başlatıldı — bu birkaç dakika sürebilir.', 'info');
+        const data = await window.electronAPI.avQuickScan();
+        renderAvResults(data, 'scan');
+        const msg = data.threatCount > 0
+            ? `Tarama tamamlandı — ${data.threatCount} tehdit bulundu!`
+            : 'Tarama tamamlandı — Tehdit tespit edilmedi';
+        toast(msg, data.threatCount > 0 ? 'error' : 'success');
+    } catch (err) {
+        document.getElementById('av-content').innerHTML =
+            `<div class="empty-state"><p style="color:var(--priority-high)">Tarama hatası: ${err.message}</p></div>`;
+        toast('Antivirüs taraması başarısız.', 'error');
+    }
+    avSetBusy(false);
+}
+
+async function doAvCleanThreats() {
+    const btn = document.getElementById('btn-av-clean');
+    if (btn) { btn.disabled = true; btn.textContent = 'Temizleniyor...'; }
+    try {
+        const res = await window.electronAPI.avCleanThreats();
+        if (res.remainingThreats === 0) {
+            toast('Tüm tehditler başarıyla temizlendi!', 'success');
+            triggerEcosystemRestore({ subtitle: 'Antivirüs taraması tamamlandı — Sistem temizlendi' });
+        } else {
+            toast(`Temizleme tamamlandı — ${res.remainingThreats} tehdit kaldı (yönetici yetkisi gerekebilir).`, 'error');
+        }
+        renderAvResults(res, 'status');
+    } catch (err) {
+        toast('Tehdit temizleme başarısız: ' + err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Tehditleri Temizle'; }
+    }
+}
+
+function avAutoStatus() {
+    const content = document.getElementById('av-content');
+    if (!content) return;
+    if (content.querySelector('.empty-state')) checkAvStatus();
+}
+
+function renderAvResults(data, source) {
+    const content = document.getElementById('av-content');
+    if (!content) return;
+
+    // Update badge
+    const badge = document.getElementById('av-badge');
+    if (badge) {
+        badge.style.display = data.threatCount > 0 ? 'flex' : 'none';
+        badge.textContent = data.threatCount > 0 ? data.threatCount : '!';
+    }
+
+    const statusColor = data.enabled ? 'var(--accent-green)' : 'var(--priority-high)';
+    const rtpColor    = data.realTimeProtection ? 'var(--accent-green)' : 'var(--priority-high)';
+    const scanAge     = data.quickScanAgeDays != null ? `${data.quickScanAgeDays} gün önce` : '—';
+
+    let html = `
+    <div class="health-grid" style="margin-bottom:20px">
+        <div class="health-card">
+            <h3>Defender Durumu</h3>
+            <div class="info-row"><span class="info-key">Antivirüs</span>
+                <span class="info-val" style="color:${statusColor}">${data.enabled ? '✓ Etkin' : '✗ Devre Dışı'}</span></div>
+            <div class="info-row"><span class="info-key">Gerçek Zamanlı Koruma</span>
+                <span class="info-val" style="color:${rtpColor}">${data.realTimeProtection ? '✓ Açık' : '✗ Kapalı'}</span></div>
+            <div class="info-row"><span class="info-key">Son Hızlı Tarama</span>
+                <span class="info-val">${scanAge}</span></div>
+            <div class="info-row"><span class="info-key">Aktif Tehdit</span>
+                <span class="info-val" style="color:${data.threatCount > 0 ? 'var(--priority-high)' : 'var(--accent-green)'}">${data.threatCount}</span></div>
+        </div>
+        <div class="health-card" style="grid-column:span 2">
+            <h3>Tarama Özeti${source === 'scan' ? ' <span class="scan-type-chip deep">⬛ Hızlı Tarama</span>' : ''}</h3>
+            ${data.threatCount === 0
+                ? `<div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                       <svg viewBox="0 0 24 24" fill="none" width="28" height="28"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/></svg>
+                       <span style="color:var(--accent-green);font-weight:500">Tehdit tespit edilmedi — Sistem temiz</span>
+                   </div>`
+                : `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                       <span style="color:var(--priority-high);font-weight:500">⚠ ${data.threatCount} aktif tehdit bulundu</span>
+                       <button class="btn-danger" id="btn-av-clean" onclick="doAvCleanThreats()">
+                           <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                           Tehditleri Temizle
+                       </button>
+                   </div>`
+            }
+        </div>
+    </div>`;
+
+    if (data.threats && data.threats.length > 0) {
+        html += `<div class="netguard-section-title">Aktif Tehditler</div>
+                 <div class="netguard-alert-list">`;
+        data.threats.forEach((t, i) => {
+            const sevClass = t.severityId >= 4 ? 'high' : t.severityId >= 2 ? 'medium' : 'low';
+            html += `
+            <div class="ng-alert-card level-${t.severityId >= 4 ? 'critical' : 'warning'}" style="animation-delay:${i*60}ms">
+                <div class="ng-alert-header">
+                    <div class="ng-alert-icon ${t.severityId >= 4 ? 'critical' : 'warning'}">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    </div>
+                    <div class="ng-alert-title">${t.name}</div>
+                    <span class="priority-chip ${sevClass}">${t.severity}</span>
+                </div>
+                <div class="ng-alert-action-text">📁 Kategori: ${t.category}</div>
+                ${t.resources?.length > 0 ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📍 ${Array.isArray(t.resources) ? t.resources.slice(0,2).join(', ') : t.resources}</div>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (data.detections && data.detections.length > 0) {
+        html += `<div class="netguard-section-title" style="margin-top:20px">Tespit Geçmişi (Son 10)</div>
+                 <div class="netguard-alert-list">`;
+        data.detections.forEach((d, i) => {
+            const dt = d.time ? new Date(d.time).toLocaleString('tr-TR') : '—';
+            html += `
+            <div class="ng-alert-card" style="animation-delay:${i*40}ms">
+                <div class="ng-alert-header">
+                    <div class="ng-alert-icon ${d.success ? 'warning' : 'critical'}">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </div>
+                    <div class="ng-alert-title">${d.name}</div>
+                    <span class="priority-chip ${d.success ? 'low' : 'medium'}">${d.success ? '✓ Temizlendi' : '⚠ Bekliyor'}</span>
+                </div>
+                <div class="ng-alert-action-text" style="font-size:11px">🕐 ${dt}</div>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (!data.threats?.length && !data.detections?.length) {
+        html += `
+        <div class="empty-state" style="padding:32px 0">
+            <svg viewBox="0 0 24 24" fill="none" width="40" height="40">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/>
+            </svg>
+            <h3>Tehdit Bulunamadı</h3>
+            <p>Sistem temiz görünüyor. Daha kapsamlı analiz için "Hızlı Tarama" butonunu kullanın.</p>
+        </div>`;
+    }
+
+    content.innerHTML = html;
 }
 
 // ─── İlk Yükleme ─────────────────────────────────────────────────────────────

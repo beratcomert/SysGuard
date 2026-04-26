@@ -27,6 +27,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('ui-event', (_, data) => callback(data));
     },
 
+    // ─── Antivirus (Modül 4) ─────────────────────────────────────────────────
+    avGetStatus:    () => ipcRenderer.invoke('av-get-status'),
+    avQuickScan:    () => ipcRenderer.invoke('av-quick-scan'),
+    avCleanThreats: () => ipcRenderer.invoke('av-clean-threats'),
+
+    onAvScanProgress: (callback) => {
+        ipcRenderer.on('av-scan-progress', (_, data) => callback(data));
+    },
+
     // ─── Klasör / Ayar ────────────────────────────────────────────────────────
     openFolder:    (folderType)   => ipcRenderer.invoke('open-folder',   folderType),
     openSettings:  (settingType)  => ipcRenderer.invoke('open-settings', settingType),
