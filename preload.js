@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     avGetStatus:    () => ipcRenderer.invoke('av-get-status'),
     avQuickScan:    () => ipcRenderer.invoke('av-quick-scan'),
     avCleanThreats: () => ipcRenderer.invoke('av-clean-threats'),
+    avGetHistory:   () => ipcRenderer.invoke('av-get-history'),
 
     onAvScanProgress: (callback) => {
         ipcRenderer.on('av-scan-progress', (_, data) => callback(data));

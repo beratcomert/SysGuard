@@ -1108,6 +1108,100 @@ function avAutoStatus() {
     if (content.querySelector('.empty-state')) checkAvStatus();
 }
 
+async function showAvHistory() {
+    const btn = document.getElementById('btn-av-history');
+    const content = document.getElementById('av-content');
+    if (!content) return;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Yükleniyor...'; }
+    content.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>Defender geçmişi alınıyor...</p></div>';
+    try {
+        const data = await window.electronAPI.avGetHistory();
+        renderAvHistory(data);
+    } catch (err) {
+        content.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Geçmiş alınamadı: ${err.message}</p></div>`;
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Temizleme Geçmişi'; }
+}
+
+function renderAvHistory(data) {
+    const content = document.getElementById('av-content');
+    if (!content) return;
+
+    const { detections = [], events = [] } = data;
+
+    const backBtn = `<button class="btn-ghost" onclick="checkAvStatus()" style="margin-bottom:16px;font-size:12px">
+        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Duruma Dön
+    </button>`;
+
+    // Prefer event log entries if available (more detailed)
+    const useEvents = events.length > 0;
+
+    let html = backBtn;
+
+    if (!detections.length && !events.length) {
+        html += `<div class="empty-state" style="padding:32px 0">
+            <svg viewBox="0 0 24 24" fill="none" width="40" height="40">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/>
+            </svg>
+            <h3>Geçmiş Boş</h3>
+            <p>Windows Defender tarafından herhangi bir temizleme kaydı bulunamadı.</p>
+        </div>`;
+        content.innerHTML = html;
+        return;
+    }
+
+    if (useEvents) {
+        html += `<div class="netguard-section-title">Defender Koruma Geçmişi (${events.length} kayıt)</div>
+                 <div class="netguard-alert-list">`;
+        events.forEach((e, i) => {
+            const dt = e.time ? new Date(e.time).toLocaleString('tr-TR') : '—';
+            const actionTr = { Quarantine: 'Karantina', Remove: 'Silindi', Block: 'Engellendi', Clean: 'Temizlendi', Allow: 'İzin Verildi' };
+            const actionLabel = actionTr[e.action] || e.action || 'Temizlendi';
+            const isRemove = ['Quarantine', 'Remove', 'Clean'].includes(e.action);
+            html += `
+            <div class="ng-alert-card" style="animation-delay:${i * 40}ms">
+                <div class="ng-alert-header">
+                    <div class="ng-alert-icon ${isRemove ? 'warning' : 'info'}">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8"/></svg>
+                    </div>
+                    <div class="ng-alert-title" style="flex:1">${e.name}</div>
+                    <span class="priority-chip ${isRemove ? 'low' : 'medium'}" style="white-space:nowrap">${actionLabel}</span>
+                </div>
+                <div class="ng-alert-action-text" style="font-size:11px">🕐 ${dt}</div>
+                ${e.path ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📁 ${e.path}</div>` : ''}
+                ${e.severity ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted)">⚠ Önem: ${e.severity}</div>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (detections.length > 0) {
+        const label = useEvents ? 'Tespit Kayıtları (PowerShell)' : `Tespit Geçmişi (${detections.length} kayıt)`;
+        html += `<div class="netguard-section-title" style="margin-top:${useEvents ? 24 : 0}px">${label}</div>
+                 <div class="netguard-alert-list">`;
+        detections.forEach((d, i) => {
+            const dt = d.detectionTime ? new Date(d.detectionTime).toLocaleString('tr-TR') : '—';
+            const at = d.actionTime ? new Date(d.actionTime).toLocaleString('tr-TR') : null;
+            html += `
+            <div class="ng-alert-card" style="animation-delay:${i * 40}ms">
+                <div class="ng-alert-header">
+                    <div class="ng-alert-icon ${d.success ? 'warning' : 'critical'}">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </div>
+                    <div class="ng-alert-title" style="flex:1">${d.name}</div>
+                    <span class="priority-chip ${d.success ? 'low' : 'medium'}">${d.success ? '✓ Temizlendi' : '⚠ Bekliyor'}</span>
+                </div>
+                <div class="ng-alert-action-text" style="font-size:11px">🕐 Tespit: ${dt}${at ? ` &nbsp;|&nbsp; İşlem: ${at}` : ''}</div>
+                ${d.resources?.length ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📁 ${d.resources.join('<br>📁 ')}</div>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    content.innerHTML = html;
+}
+
 function renderAvResults(data, source) {
     const content = document.getElementById('av-content');
     if (!content) return;

@@ -130,4 +130,63 @@ function cleanThreats() {
     };
 }
 
-module.exports = { getDefenderStatus, runQuickScan, cleanThreats };
+function getDefenderHistory() {
+    const detRaw = runPS(
+        '$d=Get-MpThreatDetection -EA SilentlyContinue|Select-Object -First 50;' +
+        'if($d){$d|Select-Object ThreatID,ThreatName,DetectionTime,ActionTime,ActionSuccess,' +
+        'CurrentThreatExecutionStatusID,Resources|ConvertTo-Json -Depth 3}else{"[]"}',
+        25000
+    );
+    let detections = [];
+    try {
+        if (detRaw) {
+            const p = JSON.parse(detRaw);
+            detections = Array.isArray(p) ? p : p ? [p] : [];
+        }
+    } catch (_) {}
+
+    const evRaw = runPS(
+        'try{$ev=Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational"' +
+        ' -MaxEvents 150 -EA SilentlyContinue|Where-Object{$_.Id -eq 1117}|Select-Object -First 40;' +
+        'if($ev){$ev|ForEach-Object{[PSCustomObject]@{Time=$_.TimeCreated;' +
+        'Msg=$_.Message.Substring(0,[Math]::Min($_.Message.Length,900))}}|ConvertTo-Json -Depth 2}' +
+        'else{"[]"}}catch{"[]"}',
+        20000
+    );
+    let events = [];
+    try {
+        if (evRaw) {
+            const p = JSON.parse(evRaw);
+            events = Array.isArray(p) ? p : p ? [p] : [];
+        }
+    } catch (_) {}
+
+    const mapped = detections.map(d => {
+        const res = d.Resources || [];
+        const resources = (Array.isArray(res) ? res : [res]).filter(Boolean).slice(0, 5);
+        return {
+            id: d.ThreatID,
+            name: d.ThreatName || 'Bilinmiyor',
+            detectionTime: d.DetectionTime,
+            actionTime: d.ActionTime,
+            success: d.ActionSuccess,
+            resources
+        };
+    });
+
+    const parsedEvents = events.map(e => {
+        const msg = e.Msg || '';
+        const pick = (key) => { const m = msg.match(new RegExp(`${key}:\\s*(.+)`)); return m?.[1]?.trim() || null; };
+        return {
+            time: e.Time,
+            name: pick('Name') || pick('Ad') || 'Bilinmiyor',
+            path: pick('Path') || pick('Yol') || null,
+            action: pick('Action') || pick('Eylem') || 'Bilinmiyor',
+            severity: pick('Severity') || pick('Önem Derecesi') || null
+        };
+    });
+
+    return { detections: mapped, events: parsedEvents };
+}
+
+module.exports = { getDefenderStatus, runQuickScan, cleanThreats, getDefenderHistory };

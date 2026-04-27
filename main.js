@@ -8,7 +8,7 @@ const { cleanTemp }                          = require('./system/temp');
 const { runQuickScan, runDeepScan }          = require('./system/agent');
 const { scanNetwork, killProcessByPid, blockPort } = require('./system/network');
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
-const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats } = require('./system/antivirus');
+const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats, getDefenderHistory } = require('./system/antivirus');
 
 let mainWindow = null;
 
@@ -129,6 +129,10 @@ ipcMain.handle('av-quick-scan', async () => {
 
 ipcMain.handle('av-clean-threats', async () => {
     return cleanThreats();
+});
+
+ipcMain.handle('av-get-history', async () => {
+    return getDefenderHistory();
 });
 
 ipcMain.handle('open-settings', async (event, settingType) => {
