@@ -1009,33 +1009,38 @@ async function openStartupApps() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODÜL 4 — Antivirüs UI
+// MODÜL 4 — SysGuard Virus Engine UI
+// Windows Defender'dan bağımsız, tamamen özel tarama motoru arayüzü
 // ═══════════════════════════════════════════════════════════════════════════════
 
-let avScanning = false;
+let avScanning   = false;
+let lastEngineResult = null; // Son tarama sonucu (karantina/sil için saklanır)
 
-// Register scan progress listener once
-if (window.electronAPI?.onAvScanProgress) {
-    window.electronAPI.onAvScanProgress((prog) => {
+// ─── Engine ilerleme dinleyicisi ─────────────────────────────────────────────
+if (window.electronAPI?.onEngineScanProgress) {
+    window.electronAPI.onEngineScanProgress((prog) => {
         const bar  = document.getElementById('av-progress-bar');
         const pct  = document.getElementById('av-progress-pct');
         const text = document.getElementById('av-scan-text');
         const sub  = document.getElementById('av-scan-sub');
-        if (bar) bar.style.width = `${prog.percent}%`;
-        if (pct) pct.textContent = `%${prog.percent}`;
-        const phaseMap = {
-            starting:   ['Windows Defender başlatılıyor...', 'Tarama motoru hazırlanıyor'],
-            scanning:   ['Sistem taranıyor...', 'Dosyalar virüs imzalarıyla karşılaştırılıyor'],
-            collecting: ['Sonuçlar toplanıyor...', 'Tehdit bilgileri alınıyor'],
-            checking:   ['Mevcut tehditler kontrol ediliyor...', 'Defender veritabanı sorgulanıyor'],
-            done:       ['Tarama tamamlandı', 'Sonuçlar hazırlanıyor...'],
-        };
-        const [t, s] = phaseMap[prog.phase] || ['Taranıyor...', ''];
-        if (text) text.textContent = t;
-        if (sub)  sub.textContent  = s;
+        if (bar)  bar.style.width    = `${prog.percent}%`;
+        if (pct)  pct.textContent    = `%${prog.percent}`;
+        if (text) text.textContent   = prog.detail || 'Taranıyor…';
+        if (sub)  sub.textContent    = _enginePhaseLabel(prog.phase);
     });
 }
 
+function _enginePhaseLabel(phase) {
+    const map = {
+        init:      'Tarama dizinleri belirleniyor',
+        scanning:  'Dosyalar hash ve imza ile analiz ediliyor',
+        processes: 'Çalışan süreçler inceleniyor',
+        done:      'Sonuçlar hazırlanıyor…',
+    };
+    return map[phase] || '';
+}
+
+// ─── Busy durumu ─────────────────────────────────────────────────────────────
 function avSetBusy(busy) {
     avScanning = busy;
     ['btn-av-scan', 'btn-av-status'].forEach(id => {
@@ -1048,259 +1053,476 @@ function avSetBusy(busy) {
     if (contentEl) contentEl.style.display = busy ? 'none'  : 'block';
 }
 
-async function checkAvStatus() {
-    if (avScanning) return;
-    avSetBusy(true);
-    try {
-        const data = await window.electronAPI.avGetStatus();
-        renderAvResults(data, 'status');
-    } catch (err) {
-        document.getElementById('av-content').innerHTML =
-            `<div class="empty-state"><p style="color:var(--priority-high)">Durum alınamadı: ${err.message}</p></div>`;
-    }
-    avSetBusy(false);
-}
-
+// ─── Motor taraması ───────────────────────────────────────────────────────────
 async function runAvScanUI() {
     if (avScanning) { toast('Tarama zaten devam ediyor.', 'info'); return; }
     avSetBusy(true);
+
     const bar = document.getElementById('av-progress-bar');
     const pct = document.getElementById('av-progress-pct');
-    if (bar) bar.style.width = '5%';
-    if (pct) pct.textContent = '%5';
+    if (bar) bar.style.width  = '3%';
+    if (pct) pct.textContent  = '%3';
+
     try {
-        toast('Windows Defender taraması başlatıldı — bu birkaç dakika sürebilir.', 'info');
-        const data = await window.electronAPI.avQuickScan();
-        renderAvResults(data, 'scan');
-        const msg = data.threatCount > 0
-            ? `Tarama tamamlandı — ${data.threatCount} tehdit bulundu!`
-            : 'Tarama tamamlandı — Tehdit tespit edilmedi';
-        toast(msg, data.threatCount > 0 ? 'error' : 'success');
+        toast('SysGuard Engine taraması başlatıldı…', 'info');
+        const data = await window.electronAPI.engineScan();
+        lastEngineResult = data;
+        renderEngineResults(data);
+
+        const total = data.threatCount + data.processRiskCount;
+        const msg   = total > 0
+            ? `Tarama tamamlandı — ${data.threatCount} tehditli dosya, ${data.processRiskCount} şüpheli süreç`
+            : 'Tarama tamamlandı — Tehdit tespit edilmedi ✓';
+        toast(msg, total > 0 ? 'error' : 'success');
     } catch (err) {
         document.getElementById('av-content').innerHTML =
             `<div class="empty-state"><p style="color:var(--priority-high)">Tarama hatası: ${err.message}</p></div>`;
-        toast('Antivirüs taraması başarısız.', 'error');
+        toast('Tarama başarısız oldu.', 'error');
     }
+
     avSetBusy(false);
 }
 
-async function doAvCleanThreats() {
-    const btn = document.getElementById('btn-av-clean');
-    if (btn) { btn.disabled = true; btn.textContent = 'Temizleniyor...'; }
-    try {
-        const res = await window.electronAPI.avCleanThreats();
-        if (res.remainingThreats === 0) {
-            toast('Tüm tehditler başarıyla temizlendi!', 'success');
-            triggerEcosystemRestore({ subtitle: 'Antivirüs taraması tamamlandı — Sistem temizlendi' });
-        } else {
-            toast(`Temizleme tamamlandı — ${res.remainingThreats} tehdit kaldı (yönetici yetkisi gerekebilir).`, 'error');
-        }
-        renderAvResults(res, 'status');
-    } catch (err) {
-        toast('Tehdit temizleme başarısız: ' + err.message, 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Tehditleri Temizle'; }
-    }
-}
-
+// ─── İlk açılışta motor bilgisi göster ───────────────────────────────────────
 function avAutoStatus() {
     const content = document.getElementById('av-content');
     if (!content) return;
-    if (content.querySelector('.empty-state')) checkAvStatus();
+    if (content.querySelector('.empty-state')) renderEngineIdle();
 }
 
-async function showAvHistory() {
-    const btn = document.getElementById('btn-av-history');
+// ─── Boşta ekranı (tarama yapılmamış) ────────────────────────────────────────
+function renderEngineIdle() {
     const content = document.getElementById('av-content');
     if (!content) return;
-    if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Yükleniyor...'; }
-    content.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>Defender geçmişi alınıyor...</p></div>';
-    try {
-        const data = await window.electronAPI.avGetHistory();
-        renderAvHistory(data);
-    } catch (err) {
-        content.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Geçmiş alınamadı: ${err.message}</p></div>`;
+
+    content.innerHTML = `
+    <!-- Motor Başlık Kartı -->
+    <div class="health-card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(129,140,248,.08),rgba(6,182,212,.06));border-color:rgba(129,140,248,.25)">
+        <div style="display:flex;align-items:center;gap:14px">
+            <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#818cf8,#06b6d4);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+                    <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div>
+                <div style="font-weight:600;font-size:15px;color:var(--text-primary)">SysGuard Engine v1.0</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Windows Defender bağımsız — Özel tespit motoru</div>
+            </div>
+            <span class="priority-chip low" style="margin-left:auto">● Hazır</span>
+        </div>
+    </div>
+
+    <!-- Tespit Yöntemleri -->
+    <div class="netguard-section-title">Tespit Yöntemleri</div>
+    <div class="health-grid" style="margin-bottom:20px">
+        <div class="health-card" style="text-align:center;padding:16px 12px">
+            <div style="font-size:22px;margin-bottom:6px">🔑</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary)">Hash Analizi</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">SHA-256 ile bilinen zararlı hash veritabanına karşı kontrol</div>
+        </div>
+        <div class="health-card" style="text-align:center;padding:16px 12px">
+            <div style="font-size:22px;margin-bottom:6px">🔬</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary)">İmza Tarama</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">40+ bilinen zararlı pattern ile dosya içeriği analizi</div>
+        </div>
+        <div class="health-card" style="text-align:center;padding:16px 12px">
+            <div style="font-size:22px;margin-bottom:6px">🧠</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary)">Heuristik</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Entropi, çift uzantı, şüpheli lokasyon, PE başlığı</div>
+        </div>
+        <div class="health-card" style="text-align:center;padding:16px 12px">
+            <div style="font-size:22px;margin-bottom:6px">⚙️</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary)">Süreç Analizi</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Çalışan süreçleri konum ve davranışa göre değerlendir</div>
+        </div>
+    </div>
+
+    <!-- Tarama Dizinleri -->
+    <div class="netguard-section-title">Taranacak Dizinler</div>
+    <div class="health-card" style="margin-bottom:20px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${['%TEMP%', '%TMP%', '%LOCALAPPDATA%\\Temp', 'Downloads', 'Startup Klasörü', 'C:\\Windows\\Temp']
+                .map(d => `<span style="background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-secondary)">${d}</span>`)
+                .join('')}
+        </div>
+    </div>
+
+    <div class="empty-state" style="padding:24px 0">
+        <p style="color:var(--text-muted);font-size:13px">Taramayı başlatmak için yukarıdaki <strong>"Tara"</strong> butonuna basın.</p>
+    </div>`;
+}
+
+// ─── Severity renk ve chip yardımcıları ──────────────────────────────────────
+function _sevChip(sev) {
+    const map = {
+        critical: ['high',   '⚠ Kritik'],
+        high:     ['high',   '⚠ Yüksek'],
+        medium:   ['medium', '◆ Orta'],
+        low:      ['low',    '● Düşük'],
+    };
+    const [cls, label] = map[sev] || ['low', '● Bilinmiyor'];
+    return `<span class="priority-chip ${cls}">${label}</span>`;
+}
+
+function _sevIconClass(sev) {
+    return sev === 'critical' || sev === 'high' ? 'critical' : 'warning';
+}
+
+// ─── Dosya kartı (Karantina + Sil butonları ile) ─────────────────────────────
+function _buildFileCard(f, index) {
+    const fileName  = f.path.split('\\').pop();
+    const shortPath = f.path.length > 70 ? '…' + f.path.slice(-67) : f.path;
+    const sizeKB    = (f.size / 1024).toFixed(1);
+
+    const threatRows = f.threats.map(t => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid rgba(255,255,255,.04)">
+            <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);min-width:70px">[${t.id}]</span>
+            <span style="font-size:11px;color:var(--text-secondary);flex:1">${t.detail}</span>
+            ${_sevChip(t.severity)}
+        </div>`).join('');
+
+    // Karantina ve sil butonları için path'i JSON-safe encode et
+    const safeIdx = index; // indeks üzerinden lastEngineResult'tan erişeceğiz
+
+    return `
+    <div class="ng-alert-card level-${_sevIconClass(f.maxSeverity)}" style="animation-delay:${index * 50}ms" id="file-card-${index}">
+        <div class="ng-alert-header">
+            <div class="ng-alert-icon ${_sevIconClass(f.maxSeverity)}">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div class="ng-alert-title" style="font-size:13px">${fileName}</div>
+                <div style="font-size:10px;color:var(--text-muted);margin-top:2px;word-break:break-all">${shortPath}</div>
+            </div>
+            ${_sevChip(f.maxSeverity)}
+        </div>
+
+        <!-- Tehdit detayları -->
+        <div style="margin:8px 0 10px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:6px">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">
+                ${f.threatCount} tespit · ${f.ext} · ${sizeKB} KB
+                &nbsp;·&nbsp; SHA-256: <span style="font-family:'JetBrains Mono',monospace">${f.hash.substring(0,16)}…</span>
+            </div>
+            ${threatRows}
+        </div>
+
+        <!-- Aksiyon butonları -->
+        <div class="ng-alert-actions">
+            <button class="btn-action" onclick="engineQuarantine(${safeIdx}, this)"
+                title="Dosyayı ~/.sysguard/quarantine/ klasörüne taşır">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+                    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+                Karantinaya Al
+            </button>
+            <button class="btn-danger" onclick="engineDelete(${safeIdx}, this)"
+                title="Dosyayı kalıcı olarak siler">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+                Sil
+            </button>
+        </div>
+    </div>`;
+}
+
+// ─── Süreç kartı ─────────────────────────────────────────────────────────────
+function _buildProcessCard(p, index) {
+    const riskRows = p.risks.map(r => `
+        <div style="font-size:11px;color:var(--text-secondary);padding:2px 0">
+            ⚠ ${r.reason}
+        </div>`).join('');
+
+    return `
+    <div class="ng-alert-card level-warning" style="animation-delay:${index * 50}ms" id="proc-card-${index}">
+        <div class="ng-alert-header">
+            <div class="ng-alert-icon warning">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div class="ng-alert-title">${p.name} <span style="color:var(--text-muted);font-size:11px">PID: ${p.pid}</span></div>
+                <div style="font-size:10px;color:var(--text-muted);word-break:break-all;margin-top:2px">${p.path}</div>
+            </div>
+            ${_sevChip(p.maxSeverity)}
+        </div>
+        <div style="margin:6px 0 10px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:6px">
+            ${riskRows}
+        </div>
+        <div class="ng-alert-actions">
+            <button class="btn-danger" onclick="engineKillProc(${p.pid}, ${index}, this)">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+                    <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Süreci Sonlandır
+            </button>
+        </div>
+    </div>`;
+}
+
+// ─── Ana sonuç render ─────────────────────────────────────────────────────────
+function renderEngineResults(data) {
+    const content = document.getElementById('av-content');
+    if (!content) return;
+
+    // Badge güncelle
+    const badge = document.getElementById('av-badge');
+    if (badge) {
+        const total = data.threatCount + data.processRiskCount;
+        badge.style.display = total > 0 ? 'flex' : 'none';
+        badge.textContent   = total > 0 ? total : '';
     }
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Temizleme Geçmişi'; }
-}
 
-function renderAvHistory(data) {
-    const content = document.getElementById('av-content');
-    if (!content) return;
+    const elapsedSec = (data.elapsed / 1000).toFixed(1);
+    const scanTime   = new Date(data.scanTime).toLocaleTimeString('tr-TR');
+    const totalThreats = data.threatCount + data.processRiskCount;
 
-    const { detections = [], events = [] } = data;
+    // ── Özet istatistikler ──
+    let html = `
+    <!-- Motor Başlık -->
+    <div class="health-card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(129,140,248,.08),rgba(6,182,212,.06));border-color:rgba(129,140,248,.25)">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px">
+                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#818cf8,#06b6d4);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="white" stroke-width="1.8"/>
+                        <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-primary)">SysGuard Engine v1.0</div>
+                    <div style="font-size:10px;color:var(--text-muted)">${scanTime} · ${elapsedSec}s · ${data.totalScanned} dosya tarandı</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div style="text-align:center">
+                    <div style="font-size:20px;font-weight:700;color:${data.criticalCount > 0 ? 'var(--priority-high)' : 'var(--text-primary)'}">${data.criticalCount}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">Kritik</div>
+                </div>
+                <div style="text-align:center">
+                    <div style="font-size:20px;font-weight:700;color:${data.highCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)'}">${data.highCount}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">Yüksek</div>
+                </div>
+                <div style="text-align:center">
+                    <div style="font-size:20px;font-weight:700;color:${data.processRiskCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)'}">${data.processRiskCount}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">Şüpheli Süreç</div>
+                </div>
+            </div>
+            <span class="priority-chip ${totalThreats === 0 ? 'low' : 'high'}" style="white-space:nowrap">
+                ${totalThreats === 0 ? '✓ Temiz' : `⚠ ${totalThreats} Tehdit`}
+            </span>
+        </div>
+    </div>`;
 
-    const backBtn = `<button class="btn-ghost" onclick="checkAvStatus()" style="margin-bottom:16px;font-size:12px">
-        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        Duruma Dön
-    </button>`;
-
-    // Prefer event log entries if available (more detailed)
-    const useEvents = events.length > 0;
-
-    let html = backBtn;
-
-    if (!detections.length && !events.length) {
-        html += `<div class="empty-state" style="padding:32px 0">
-            <svg viewBox="0 0 24 24" fill="none" width="40" height="40">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/>
+    // ── Temiz durum ──
+    if (totalThreats === 0) {
+        html += `
+        <div class="empty-state" style="padding:40px 0">
+            <svg viewBox="0 0 24 24" fill="none" width="48" height="48">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="var(--accent-green)" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M9 12l2 2 4-4" stroke="var(--accent-green)" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
-            <h3>Geçmiş Boş</h3>
-            <p>Windows Defender tarafından herhangi bir temizleme kaydı bulunamadı.</p>
+            <h3 style="color:var(--accent-green)">Sistem Temiz</h3>
+            <p>Tarama tamamlandı — herhangi bir tehdit tespit edilmedi.</p>
+            <p style="font-size:11px;color:var(--text-muted)">${data.totalScanned} dosya incelendi · ${data.scannedDirs.length} dizin tarandı</p>
         </div>`;
         content.innerHTML = html;
         return;
     }
 
-    if (useEvents) {
-        html += `<div class="netguard-section-title">Defender Koruma Geçmişi (${events.length} kayıt)</div>
-                 <div class="netguard-alert-list">`;
-        events.forEach((e, i) => {
-            const dt = e.time ? new Date(e.time).toLocaleString('tr-TR') : '—';
-            const actionTr = { Quarantine: 'Karantina', Remove: 'Silindi', Block: 'Engellendi', Clean: 'Temizlendi', Allow: 'İzin Verildi' };
-            const actionLabel = actionTr[e.action] || e.action || 'Temizlendi';
-            const isRemove = ['Quarantine', 'Remove', 'Clean'].includes(e.action);
-            html += `
-            <div class="ng-alert-card" style="animation-delay:${i * 40}ms">
-                <div class="ng-alert-header">
-                    <div class="ng-alert-icon ${isRemove ? 'warning' : 'info'}">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8"/></svg>
-                    </div>
-                    <div class="ng-alert-title" style="flex:1">${e.name}</div>
-                    <span class="priority-chip ${isRemove ? 'low' : 'medium'}" style="white-space:nowrap">${actionLabel}</span>
-                </div>
-                <div class="ng-alert-action-text" style="font-size:11px">🕐 ${dt}</div>
-                ${e.path ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📁 ${e.path}</div>` : ''}
-                ${e.severity ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted)">⚠ Önem: ${e.severity}</div>` : ''}
-            </div>`;
-        });
-        html += `</div>`;
+    // ── Tehditli dosyalar ──
+    if (data.infectedFiles.length > 0) {
+        html += `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="netguard-section-title" style="margin:0">
+                Tehditli Dosyalar <span style="color:var(--priority-high)">(${data.infectedFiles.length})</span>
+            </div>
+            ${data.infectedFiles.length > 1 ? `
+            <button class="btn-danger" style="font-size:11px" onclick="engineQuarantineAll(this)">
+                <svg viewBox="0 0 24 24" fill="none" width="12" height="12">
+                    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+                Tümünü Karantinaya Al
+            </button>` : ''}
+        </div>
+        <div class="netguard-alert-list">
+            ${data.infectedFiles.map((f, i) => _buildFileCard(f, i)).join('')}
+        </div>`;
     }
 
-    if (detections.length > 0) {
-        const label = useEvents ? 'Tespit Kayıtları (PowerShell)' : `Tespit Geçmişi (${detections.length} kayıt)`;
-        html += `<div class="netguard-section-title" style="margin-top:${useEvents ? 24 : 0}px">${label}</div>
-                 <div class="netguard-alert-list">`;
-        detections.forEach((d, i) => {
-            const dt = d.detectionTime ? new Date(d.detectionTime).toLocaleString('tr-TR') : '—';
-            const at = d.actionTime ? new Date(d.actionTime).toLocaleString('tr-TR') : null;
-            html += `
-            <div class="ng-alert-card" style="animation-delay:${i * 40}ms">
-                <div class="ng-alert-header">
-                    <div class="ng-alert-icon ${d.success ? 'warning' : 'critical'}">
-                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                    </div>
-                    <div class="ng-alert-title" style="flex:1">${d.name}</div>
-                    <span class="priority-chip ${d.success ? 'low' : 'medium'}">${d.success ? '✓ Temizlendi' : '⚠ Bekliyor'}</span>
-                </div>
-                <div class="ng-alert-action-text" style="font-size:11px">🕐 Tespit: ${dt}${at ? ` &nbsp;|&nbsp; İşlem: ${at}` : ''}</div>
-                ${d.resources?.length ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📁 ${d.resources.join('<br>📁 ')}</div>` : ''}
-            </div>`;
-        });
-        html += `</div>`;
+    // ── Şüpheli süreçler ──
+    if (data.suspiciousProcesses.length > 0) {
+        html += `
+        <div class="netguard-section-title" style="margin-top:24px">
+            Şüpheli Süreçler <span style="color:var(--priority-medium)">(${data.suspiciousProcesses.length})</span>
+        </div>
+        <div class="netguard-alert-list">
+            ${data.suspiciousProcesses.map((p, i) => _buildProcessCard(p, i)).join('')}
+        </div>`;
     }
+
+    // ── Tarama edilen dizinler ──
+    html += `
+    <div class="netguard-section-title" style="margin-top:24px">Taranan Dizinler</div>
+    <div class="health-card">
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+            ${data.scannedDirs.map(d =>
+                `<span style="background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.15);border-radius:5px;padding:2px 8px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">${d}</span>`
+            ).join('')}
+        </div>
+    </div>`;
 
     content.innerHTML = html;
 }
 
-function renderAvResults(data, source) {
+// ─── Aksiyon: Karantinaya al ──────────────────────────────────────────────────
+async function engineQuarantine(fileIndex, btn) {
+    if (!lastEngineResult) return;
+    const f = lastEngineResult.infectedFiles[fileIndex];
+    if (!f) return;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Taşınıyor…'; }
+
+    try {
+        const res = await window.electronAPI.engineQuarantine(f.path);
+        if (res.success) {
+            toast(`Karantinaya alındı: ${f.path.split('\\').pop()}`, 'success');
+            const card = document.getElementById(`file-card-${fileIndex}`);
+            if (card) {
+                card.style.opacity = '0.4';
+                card.style.pointerEvents = 'none';
+                card.querySelector('.ng-alert-title').textContent += ' — ✓ Karantina';
+            }
+        } else {
+            toast(`Karantina başarısız: ${res.error}`, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Karantinaya Al'; }
+        }
+    } catch (err) {
+        toast('İşlem başarısız: ' + err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Karantinaya Al'; }
+    }
+}
+
+// ─── Aksiyon: Sil ─────────────────────────────────────────────────────────────
+async function engineDelete(fileIndex, btn) {
+    if (!lastEngineResult) return;
+    const f = lastEngineResult.infectedFiles[fileIndex];
+    if (!f) return;
+
+    if (!confirm(`"${f.path.split('\\').pop()}" dosyasını kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Siliniyor…'; }
+
+    try {
+        const res = await window.electronAPI.engineDelete(f.path);
+        if (res.success) {
+            toast(`Dosya silindi: ${f.path.split('\\').pop()}`, 'success');
+            const card = document.getElementById(`file-card-${fileIndex}`);
+            if (card) card.remove();
+        } else {
+            toast(`Silme başarısız: ${res.error}`, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Sil'; }
+        }
+    } catch (err) {
+        toast('İşlem başarısız: ' + err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sil'; }
+    }
+}
+
+// ─── Aksiyon: Tümünü karantinaya al ─────────────────────────────────────────
+async function engineQuarantineAll(btn) {
+    if (!lastEngineResult?.infectedFiles?.length) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Karantinaya alınıyor…'; }
+
+    let successCount = 0;
+    for (let i = 0; i < lastEngineResult.infectedFiles.length; i++) {
+        const f = lastEngineResult.infectedFiles[i];
+        try {
+            const res = await window.electronAPI.engineQuarantine(f.path);
+            if (res.success) {
+                successCount++;
+                const card = document.getElementById(`file-card-${i}`);
+                if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
+            }
+        } catch (_) {}
+    }
+
+    toast(`${successCount} dosya karantinaya alındı.`, successCount > 0 ? 'success' : 'error');
+    if (successCount > 0) {
+        triggerEcosystemRestore({ subtitle: `${successCount} tehditli dosya karantinaya alındı — Sistem temizlendi` });
+    }
+    if (btn) { btn.disabled = false; btn.textContent = `✓ ${successCount} Karantinaya Alındı`; }
+}
+
+// ─── Aksiyon: Süreci sonlandır ────────────────────────────────────────────────
+async function engineKillProc(pid, index, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Sonlandırılıyor…'; }
+    try {
+        const res = await window.electronAPI.engineKillProcess(pid);
+        if (res.success) {
+            toast(`Süreç sonlandırıldı (PID: ${pid})`, 'success');
+            const card = document.getElementById(`proc-card-${index}`);
+            if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
+        } else {
+            toast(`Süreç sonlandırılamadı: ${res.error}`, 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Süreci Sonlandır'; }
+        }
+    } catch (err) {
+        toast('İşlem başarısız: ' + err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Süreci Sonlandır'; }
+    }
+}
+
+// ─── Karantina Listesi ────────────────────────────────────────────────────────
+async function showQuarantineList() {
     const content = document.getElementById('av-content');
     if (!content) return;
 
-    // Update badge
-    const badge = document.getElementById('av-badge');
-    if (badge) {
-        badge.style.display = data.threatCount > 0 ? 'flex' : 'none';
-        badge.textContent = data.threatCount > 0 ? data.threatCount : '!';
-    }
+    const btn = document.getElementById('btn-av-history');
+    if (btn) { btn.disabled = true; }
 
-    const statusColor = data.enabled ? 'var(--accent-green)' : 'var(--priority-high)';
-    const rtpColor    = data.realTimeProtection ? 'var(--accent-green)' : 'var(--priority-high)';
-    const scanAge     = data.quickScanAgeDays != null ? `${data.quickScanAgeDays} gün önce` : '—';
+    content.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>Karantina dizini okunuyor…</p></div>';
 
-    let html = `
-    <div class="health-grid" style="margin-bottom:20px">
-        <div class="health-card">
-            <h3>Defender Durumu</h3>
-            <div class="info-row"><span class="info-key">Antivirüs</span>
-                <span class="info-val" style="color:${statusColor}">${data.enabled ? '✓ Etkin' : '✗ Devre Dışı'}</span></div>
-            <div class="info-row"><span class="info-key">Gerçek Zamanlı Koruma</span>
-                <span class="info-val" style="color:${rtpColor}">${data.realTimeProtection ? '✓ Açık' : '✗ Kapalı'}</span></div>
-            <div class="info-row"><span class="info-key">Son Hızlı Tarama</span>
-                <span class="info-val">${scanAge}</span></div>
-            <div class="info-row"><span class="info-key">Aktif Tehdit</span>
-                <span class="info-val" style="color:${data.threatCount > 0 ? 'var(--priority-high)' : 'var(--accent-green)'}">${data.threatCount}</span></div>
-        </div>
-        <div class="health-card" style="grid-column:span 2">
-            <h3>Tarama Özeti${source === 'scan' ? ' <span class="scan-type-chip deep">⬛ Hızlı Tarama</span>' : ''}</h3>
-            ${data.threatCount === 0
-                ? `<div style="display:flex;align-items:center;gap:10px;padding:8px 0">
-                       <svg viewBox="0 0 24 24" fill="none" width="28" height="28"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/></svg>
-                       <span style="color:var(--accent-green);font-weight:500">Tehdit tespit edilmedi — Sistem temiz</span>
-                   </div>`
-                : `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                       <span style="color:var(--priority-high);font-weight:500">⚠ ${data.threatCount} aktif tehdit bulundu</span>
-                       <button class="btn-danger" id="btn-av-clean" onclick="doAvCleanThreats()">
-                           <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                           Tehditleri Temizle
-                       </button>
-                   </div>`
-            }
-        </div>
-    </div>`;
+    try {
+        // Karantina klasörünü oku (Node path: ~\.sysguard\quarantine)
+        const items = await window.electronAPI.quarantineList?.() ?? null;
 
-    if (data.threats && data.threats.length > 0) {
-        html += `<div class="netguard-section-title">Aktif Tehditler</div>
-                 <div class="netguard-alert-list">`;
-        data.threats.forEach((t, i) => {
-            const sevClass = t.severityId >= 4 ? 'high' : t.severityId >= 2 ? 'medium' : 'low';
-            html += `
-            <div class="ng-alert-card level-${t.severityId >= 4 ? 'critical' : 'warning'}" style="animation-delay:${i*60}ms">
-                <div class="ng-alert-header">
-                    <div class="ng-alert-icon ${t.severityId >= 4 ? 'critical' : 'warning'}">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                    </div>
-                    <div class="ng-alert-title">${t.name}</div>
-                    <span class="priority-chip ${sevClass}">${t.severity}</span>
+        if (!items) {
+            // API yoksa bilgi mesajı göster
+            const qPath = `${navigator.platform.includes('Win') ? '%USERPROFILE%' : '~'}\\.sysguard\\quarantine`;
+            content.innerHTML = `
+            <button class="btn-ghost" onclick="renderEngineIdle()" style="margin-bottom:16px;font-size:12px">
+                <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Geri Dön
+            </button>
+            <div class="health-card">
+                <h3 style="margin-bottom:8px">Karantina Klasörü</h3>
+                <p style="font-size:12px;color:var(--text-muted)">Karantinaya alınan dosyalar aşağıdaki konumda saklanır:</p>
+                <div style="margin-top:10px;padding:8px 12px;background:rgba(0,0,0,.25);border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-secondary)">
+                    ${qPath}
                 </div>
-                <div class="ng-alert-action-text">📁 Kategori: ${t.category}</div>
-                ${t.resources?.length > 0 ? `<div class="ng-alert-action-text" style="font-size:10px;color:var(--text-muted);word-break:break-all">📍 ${Array.isArray(t.resources) ? t.resources.slice(0,2).join(', ') : t.resources}</div>` : ''}
+                <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+                    Her karantina dosyası <code>.quarantine</code> uzantısıyla taşınır ve yanında <code>.meta.json</code> dosyası oluşturulur (orijinal yol bilgisi).
+                </p>
             </div>`;
-        });
-        html += `</div>`;
+            return;
+        }
+
+        // items gelirse listele (ileride API eklenirse)
+        const backBtn = `<button class="btn-ghost" onclick="renderEngineIdle()" style="margin-bottom:16px;font-size:12px">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Geri Dön
+        </button>`;
+        content.innerHTML = items.length === 0
+            ? backBtn + '<div class="empty-state"><h3>Karantina Boş</h3><p>Henüz karantinaya alınan dosya yok.</p></div>'
+            : backBtn + items.map(it => `<div class="ng-alert-card">${it}</div>`).join('');
+    } catch (err) {
+        content.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Karantina listesi alınamadı: ${err.message}</p></div>`;
     }
 
-    if (data.detections && data.detections.length > 0) {
-        html += `<div class="netguard-section-title" style="margin-top:20px">Tespit Geçmişi (Son 10)</div>
-                 <div class="netguard-alert-list">`;
-        data.detections.forEach((d, i) => {
-            const dt = d.time ? new Date(d.time).toLocaleString('tr-TR') : '—';
-            html += `
-            <div class="ng-alert-card" style="animation-delay:${i*40}ms">
-                <div class="ng-alert-header">
-                    <div class="ng-alert-icon ${d.success ? 'warning' : 'critical'}">
-                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                    </div>
-                    <div class="ng-alert-title">${d.name}</div>
-                    <span class="priority-chip ${d.success ? 'low' : 'medium'}">${d.success ? '✓ Temizlendi' : '⚠ Bekliyor'}</span>
-                </div>
-                <div class="ng-alert-action-text" style="font-size:11px">🕐 ${dt}</div>
-            </div>`;
-        });
-        html += `</div>`;
-    }
-
-    if (!data.threats?.length && !data.detections?.length) {
-        html += `
-        <div class="empty-state" style="padding:32px 0">
-            <svg viewBox="0 0 24 24" fill="none" width="40" height="40">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="var(--accent-green)" stroke-width="1.8"/>
-            </svg>
-            <h3>Tehdit Bulunamadı</h3>
-            <p>Sistem temiz görünüyor. Daha kapsamlı analiz için "Hızlı Tarama" butonunu kullanın.</p>
-        </div>`;
-    }
-
-    content.innerHTML = html;
+    if (btn) { btn.disabled = false; }
 }
 
 // ─── İlk Yükleme ─────────────────────────────────────────────────────────────

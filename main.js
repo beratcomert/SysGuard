@@ -9,6 +9,7 @@ const { runQuickScan, runDeepScan }          = require('./system/agent');
 const { scanNetwork, killProcessByPid, blockPort } = require('./system/network');
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats, getDefenderHistory } = require('./system/antivirus');
+const { runEngineScan, quarantineFile, deleteFile, killProcess } = require('./system/virusEngine');
 
 let mainWindow = null;
 
@@ -133,6 +134,25 @@ ipcMain.handle('av-clean-threats', async () => {
 
 ipcMain.handle('av-get-history', async () => {
     return getDefenderHistory();
+});
+
+// ─── IPC: SysGuard Virus Engine ──────────────────────────────────────────────
+ipcMain.handle('engine-scan', async () => {
+    return runEngineScan((progress) => {
+        if (mainWindow) mainWindow.webContents.send('engine-scan-progress', progress);
+    });
+});
+
+ipcMain.handle('engine-quarantine', async (event, filePath) => {
+    return quarantineFile(filePath);
+});
+
+ipcMain.handle('engine-delete', async (event, filePath) => {
+    return deleteFile(filePath);
+});
+
+ipcMain.handle('engine-kill-process', async (event, pid) => {
+    return killProcess(pid);
 });
 
 ipcMain.handle('open-settings', async (event, settingType) => {

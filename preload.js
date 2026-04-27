@@ -37,6 +37,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('av-scan-progress', (_, data) => callback(data));
     },
 
+    // ─── SysGuard Virus Engine ────────────────────────────────────────────────
+    engineScan:        ()           => ipcRenderer.invoke('engine-scan'),
+    engineQuarantine:  (filePath)   => ipcRenderer.invoke('engine-quarantine', filePath),
+    engineDelete:      (filePath)   => ipcRenderer.invoke('engine-delete', filePath),
+    engineKillProcess: (pid)        => ipcRenderer.invoke('engine-kill-process', pid),
+
+    onEngineScanProgress: (callback) => {
+        ipcRenderer.on('engine-scan-progress', (_, data) => callback(data));
+    },
+
     // ─── Klasör / Ayar ────────────────────────────────────────────────────────
     openFolder:    (folderType)   => ipcRenderer.invoke('open-folder',   folderType),
     openSettings:  (settingType)  => ipcRenderer.invoke('open-settings', settingType),
