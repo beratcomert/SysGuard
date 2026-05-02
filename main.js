@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const os   = require('os');
 
@@ -9,7 +9,7 @@ const { runQuickScan, runDeepScan }          = require('./system/agent');
 const { scanNetwork, killProcessByPid, blockPort } = require('./system/network');
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats, getDefenderHistory } = require('./system/antivirus');
-const { runEngineScan, quarantineFile, deleteFile, killProcess } = require('./system/virusEngine');
+const { runEngineScan, scanSingleFile, quarantineFile, deleteFile, killProcess } = require('./system/virusEngine');
 
 let mainWindow = null;
 
@@ -153,6 +153,20 @@ ipcMain.handle('engine-delete', async (event, filePath) => {
 
 ipcMain.handle('engine-kill-process', async (event, pid) => {
     return killProcess(pid);
+});
+
+ipcMain.handle('engine-scan-file', async (event, filePath) => {
+    return scanSingleFile(filePath, (progress) => {
+        if (mainWindow) mainWindow.webContents.send('engine-scan-progress', progress);
+    });
+});
+
+ipcMain.handle('show-open-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Taranacak Dosyayı Seçin',
+        properties: ['openFile'],
+    });
+    return result;
 });
 
 ipcMain.handle('open-settings', async (event, settingType) => {

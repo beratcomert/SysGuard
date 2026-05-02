@@ -1014,7 +1014,8 @@ async function openStartupApps() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let avScanning   = false;
-let lastEngineResult = null; // Son tarama sonucu (karantina/sil için saklanır)
+let lastEngineResult  = null; // Son tarama sonucu (karantina/sil için saklanır)
+let activeVirusFilter = null; // Aktif kategori filtresi
 
 // ─── Engine ilerleme dinleyicisi ─────────────────────────────────────────────
 if (window.electronAPI?.onEngineScanProgress) {
@@ -1043,7 +1044,7 @@ function _enginePhaseLabel(phase) {
 // ─── Busy durumu ─────────────────────────────────────────────────────────────
 function avSetBusy(busy) {
     avScanning = busy;
-    ['btn-av-scan', 'btn-av-status'].forEach(id => {
+    ['btn-av-scan', 'btn-av-scan-file', 'btn-av-status'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = busy;
     });
@@ -1051,6 +1052,52 @@ function avSetBusy(busy) {
     const contentEl = document.getElementById('av-content');
     if (scanEl)    scanEl.style.display    = busy ? 'block' : 'none';
     if (contentEl) contentEl.style.display = busy ? 'none'  : 'block';
+}
+
+// ─── Tek dosya taraması ───────────────────────────────────────────────────────
+async function scanSingleFileUI() {
+    if (avScanning) { toast('Tarama zaten devam ediyor.', 'info'); return; }
+
+    const result = await window.electronAPI.showOpenDialog();
+    if (result.canceled || !result.filePaths?.length) return;
+
+    const filePath = result.filePaths[0];
+    avSetBusy(true);
+
+    const bar = document.getElementById('av-progress-bar');
+    const pct = document.getElementById('av-progress-pct');
+    if (bar) bar.style.width = '10%';
+    if (pct) pct.textContent = '%10';
+
+    const textEl = document.getElementById('av-scan-text');
+    const subEl  = document.getElementById('av-scan-sub');
+    if (textEl) textEl.textContent = `Taranıyor: ${filePath.split('\\').pop()}`;
+    if (subEl)  subEl.textContent  = 'Hash, imza ve heuristik analiz yapılıyor…';
+
+    try {
+        toast('Dosya taraması başlatıldı…', 'info');
+        activeVirusFilter = null;
+        const data = await window.electronAPI.engineScanFile(filePath);
+
+        if (data.error) {
+            document.getElementById('av-content').innerHTML =
+                `<div class="empty-state"><p style="color:var(--priority-high)">Hata: ${data.error}</p></div>`;
+            toast(data.error, 'error');
+        } else {
+            lastEngineResult = data;
+            renderEngineResults(data);
+            const msg = data.threatCount > 0
+                ? `Tarama tamamlandı — ${data.threatCount} tehdit tespit edildi`
+                : 'Tarama tamamlandı — Dosya temiz ✓';
+            toast(msg, data.threatCount > 0 ? 'error' : 'success');
+        }
+    } catch (err) {
+        document.getElementById('av-content').innerHTML =
+            `<div class="empty-state"><p style="color:var(--priority-high)">Tarama hatası: ${err.message}</p></div>`;
+        toast('Tarama başarısız oldu.', 'error');
+    }
+
+    avSetBusy(false);
 }
 
 // ─── Motor taraması ───────────────────────────────────────────────────────────
@@ -1065,6 +1112,7 @@ async function runAvScanUI() {
 
     try {
         toast('SysGuard Engine taraması başlatıldı…', 'info');
+        activeVirusFilter = null;
         const data = await window.electronAPI.engineScan();
         lastEngineResult = data;
         renderEngineResults(data);
@@ -1087,7 +1135,14 @@ async function runAvScanUI() {
 function avAutoStatus() {
     const content = document.getElementById('av-content');
     if (!content) return;
-    if (content.querySelector('.empty-state')) renderEngineIdle();
+    if (lastEngineResult) {
+        // Sekmeye geri dönüldüğünde sonuçlar DOM'da değilse yeniden render et
+        if (!document.getElementById('av-cat-grid') && !document.getElementById('av-scan-clean')) {
+            renderEngineResults(lastEngineResult);
+        }
+    } else {
+        renderEngineIdle();
+    }
 }
 
 // ─── Boşta ekranı (tarama yapılmamış) ────────────────────────────────────────
@@ -1153,7 +1208,7 @@ function renderEngineIdle() {
     </div>`;
 }
 
-// ─── Severity renk ve chip yardımcıları ──────────────────────────────────────
+// ─── Yardımcılar ─────────────────────────────────────────────────────────────
 function _sevChip(sev) {
     const map = {
         critical: ['high',   '⚠ Kritik'],
@@ -1169,55 +1224,114 @@ function _sevIconClass(sev) {
     return sev === 'critical' || sev === 'high' ? 'critical' : 'warning';
 }
 
-// ─── Dosya kartı (Karantina + Sil butonları ile) ─────────────────────────────
-function _buildFileCard(f, index) {
-    const fileName  = f.path.split('\\').pop();
-    const shortPath = f.path.length > 70 ? '…' + f.path.slice(-67) : f.path;
-    const sizeKB    = (f.size / 1024).toFixed(1);
+/**
+ * Virüs türü rozeti — emoji + renkli arka plan + etiket
+ * typeMeta: { label, emoji, color, desc }
+ */
+function _virusTypeBadge(typeMeta) {
+    if (!typeMeta) return '';
+    return `
+    <span style="
+        display:inline-flex;align-items:center;gap:5px;
+        background:${typeMeta.color}18;
+        border:1px solid ${typeMeta.color}40;
+        border-radius:6px;padding:2px 8px;
+        font-size:11px;font-weight:600;color:${typeMeta.color};
+        white-space:nowrap;
+    ">
+        ${typeMeta.emoji} ${typeMeta.label}
+    </span>`;
+}
 
-    const threatRows = f.threats.map(t => `
-        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid rgba(255,255,255,.04)">
-            <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);min-width:70px">[${t.id}]</span>
-            <span style="font-size:11px;color:var(--text-secondary);flex:1">${t.detail}</span>
-            ${_sevChip(t.severity)}
-        </div>`).join('');
-
-    // Karantina ve sil butonları için path'i JSON-safe encode et
-    const safeIdx = index; // indeks üzerinden lastEngineResult'tan erişeceğiz
+/**
+ * Virüs türü açıklama satırı — her tehdit için tip + açıklama
+ */
+function _threatRow(t) {
+    // virusTypeMeta'yı lastEngineResult'tan al
+    const vtMeta = (lastEngineResult?.virusTypeMeta || {})[t.virusType];
+    const typeLabel = vtMeta
+        ? `<span style="color:${vtMeta.color};font-weight:600">${vtMeta.emoji} ${vtMeta.label}</span>`
+        : `<span style="color:var(--text-muted)">${t.virusType || '?'}</span>`;
 
     return `
-    <div class="ng-alert-card level-${_sevIconClass(f.maxSeverity)}" style="animation-delay:${index * 50}ms" id="file-card-${index}">
-        <div class="ng-alert-header">
-            <div class="ng-alert-icon ${_sevIconClass(f.maxSeverity)}">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <div style="padding:7px 0;border-top:1px solid rgba(255,255,255,.05)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <span style="font-size:10px;font-family:'JetBrains Mono',monospace;
+                         color:var(--text-muted);flex-shrink:0;min-width:74px">[${t.id}]</span>
+            <span style="font-size:12px;color:var(--text-primary);font-weight:500;flex:1">${t.name}</span>
+            ${_sevChip(t.severity)}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding-left:82px">
+            ${typeLabel}
+            <span style="font-size:11px;color:var(--text-muted)">${t.description || t.detail || ''}</span>
+        </div>
+    </div>`;
+}
+
+// ─── Dosya kartı ──────────────────────────────────────────────────────────────
+function _buildFileCard(f, index) {
+    const fileName  = f.path.split('\\').pop();
+    const shortPath = f.path.length > 72 ? '…' + f.path.slice(-69) : f.path;
+    const sizeKB    = (f.size / 1024).toFixed(1);
+    const pMeta     = f.primaryTypeMeta || {};
+
+    return `
+    <div class="ng-alert-card level-${_sevIconClass(f.maxSeverity)}"
+         style="animation-delay:${index * 45}ms;border-left:3px solid ${pMeta.color || '#ef4444'}"
+         id="file-card-${index}">
+
+        <!-- Başlık satırı -->
+        <div class="ng-alert-header" style="margin-bottom:8px">
+            <div style="width:36px;height:36px;border-radius:9px;background:${pMeta.color || '#ef4444'}18;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">
+                ${pMeta.emoji || '⚠️'}
             </div>
             <div style="flex:1;min-width:0">
-                <div class="ng-alert-title" style="font-size:13px">${fileName}</div>
-                <div style="font-size:10px;color:var(--text-muted);margin-top:2px;word-break:break-all">${shortPath}</div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span class="ng-alert-title" style="font-size:13px">${fileName}</span>
+                    ${_virusTypeBadge(pMeta)}
+                </div>
+                <div style="font-size:10px;color:var(--text-muted);margin-top:2px;
+                            word-break:break-all">${shortPath}</div>
             </div>
             ${_sevChip(f.maxSeverity)}
         </div>
 
-        <!-- Tehdit detayları -->
-        <div style="margin:8px 0 10px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:6px">
-            <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">
-                ${f.threatCount} tespit · ${f.ext} · ${sizeKB} KB
-                &nbsp;·&nbsp; SHA-256: <span style="font-family:'JetBrains Mono',monospace">${f.hash.substring(0,16)}…</span>
+        <!-- Tür açıklaması -->
+        ${pMeta.desc ? `
+        <div style="margin:0 0 8px;padding:6px 10px;
+                    background:${pMeta.color || '#ef4444'}0d;
+                    border-radius:6px;border-left:2px solid ${pMeta.color || '#ef4444'}60">
+            <span style="font-size:11px;color:var(--text-secondary)">${pMeta.desc}</span>
+        </div>` : ''}
+
+        <!-- Tespit detayları -->
+        <div style="margin:0 0 10px;padding:4px 8px;background:rgba(0,0,0,.2);border-radius:6px">
+            <div style="font-size:10px;color:var(--text-muted);padding:4px 0 2px;
+                        display:flex;gap:12px;flex-wrap:wrap">
+                <span>${f.threatCount} tespit</span>
+                <span>${f.ext} · ${sizeKB} KB</span>
+                <span style="font-family:'JetBrains Mono',monospace">
+                    SHA-256: ${f.hash.substring(0,20)}…
+                </span>
+                ${f.virusTypes?.length > 1
+                    ? `<span style="color:var(--priority-medium)">${f.virusTypes.length} farklı tür</span>`
+                    : ''}
             </div>
-            ${threatRows}
+            ${f.threats.map(t => _threatRow(t)).join('')}
         </div>
 
         <!-- Aksiyon butonları -->
         <div class="ng-alert-actions">
-            <button class="btn-action" onclick="engineQuarantine(${safeIdx}, this)"
-                title="Dosyayı ~/.sysguard/quarantine/ klasörüne taşır">
+            <button class="btn-action" onclick="engineQuarantine(${index}, this)"
+                title="Dosyayı karantina klasörüne taşır, silinmez">
                 <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
                     <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/>
                     <path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                 </svg>
                 Karantinaya Al
             </button>
-            <button class="btn-danger" onclick="engineDelete(${safeIdx}, this)"
+            <button class="btn-danger" onclick="engineDelete(${index}, this)"
                 title="Dosyayı kalıcı olarak siler">
                 <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
                     <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -1228,26 +1342,45 @@ function _buildFileCard(f, index) {
     </div>`;
 }
 
-// ─── Süreç kartı ─────────────────────────────────────────────────────────────
+// ─── Süreç kartı ──────────────────────────────────────────────────────────────
 function _buildProcessCard(p, index) {
+    const pMeta = p.virusTypeMeta || {};
+
     const riskRows = p.risks.map(r => `
-        <div style="font-size:11px;color:var(--text-secondary);padding:2px 0">
-            ⚠ ${r.reason}
+        <div style="font-size:11px;color:var(--text-secondary);padding:3px 0;
+                    display:flex;align-items:center;gap:6px">
+            <span style="color:var(--priority-medium)">⚠</span>
+            <span>${r.reason}</span>
         </div>`).join('');
 
     return `
-    <div class="ng-alert-card level-warning" style="animation-delay:${index * 50}ms" id="proc-card-${index}">
-        <div class="ng-alert-header">
-            <div class="ng-alert-icon warning">
-                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <div class="ng-alert-card level-warning"
+         style="animation-delay:${index * 45}ms;border-left:3px solid ${pMeta.color || '#f97316'}"
+         id="proc-card-${index}">
+        <div class="ng-alert-header" style="margin-bottom:8px">
+            <div style="width:36px;height:36px;border-radius:9px;background:${pMeta.color || '#f97316'}18;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">
+                ${pMeta.emoji || '⚙️'}
             </div>
             <div style="flex:1;min-width:0">
-                <div class="ng-alert-title">${p.name} <span style="color:var(--text-muted);font-size:11px">PID: ${p.pid}</span></div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span class="ng-alert-title">${p.name}</span>
+                    <span style="color:var(--text-muted);font-size:11px">PID: ${p.pid}</span>
+                    ${_virusTypeBadge(pMeta)}
+                </div>
                 <div style="font-size:10px;color:var(--text-muted);word-break:break-all;margin-top:2px">${p.path}</div>
             </div>
             ${_sevChip(p.maxSeverity)}
         </div>
-        <div style="margin:6px 0 10px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:6px">
+
+        ${pMeta.desc ? `
+        <div style="margin:0 0 8px;padding:6px 10px;
+                    background:${pMeta.color || '#f97316'}0d;
+                    border-radius:6px;border-left:2px solid ${pMeta.color || '#f97316'}60">
+            <span style="font-size:11px;color:var(--text-secondary)">${pMeta.desc}</span>
+        </div>` : ''}
+
+        <div style="margin:0 0 10px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:6px">
             ${riskRows}
         </div>
         <div class="ng-alert-actions">
@@ -1260,6 +1393,172 @@ function _buildProcessCard(p, index) {
             </button>
         </div>
     </div>`;
+}
+
+// ─── Virüs türü özet paneli ───────────────────────────────────────────────────
+function _buildTypeBreakdown(typeBreakdown, virusTypeMeta) {
+    if (!typeBreakdown || !Object.keys(typeBreakdown).length) return '';
+
+    const entries = Object.entries(typeBreakdown)
+        .sort((a, b) => b[1] - a[1]);
+
+    const totalFiles = Object.values(typeBreakdown).reduce((a, b) => a + b, 0);
+
+    const allCard = `
+    <div id="av-cat-all"
+         onclick="filterEngineResults(null)"
+         style="
+             cursor:pointer;transition:all 0.18s;
+             display:flex;align-items:center;gap:10px;
+             padding:10px 12px;
+             background:rgba(129,140,248,0.10);
+             border:2px solid rgba(129,140,248,0.45);
+             border-radius:10px;
+         ">
+        <span style="font-size:22px;flex-shrink:0">🔍</span>
+        <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700;color:#818cf8">Tümünü Göster</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Bütün kategoriler</div>
+        </div>
+        <div style="
+            min-width:28px;height:28px;border-radius:50%;
+            background:rgba(129,140,248,0.20);border:1.5px solid rgba(129,140,248,0.50);
+            display:flex;align-items:center;justify-content:center;
+            font-size:12px;font-weight:700;color:#818cf8;flex-shrink:0
+        ">${totalFiles}</div>
+    </div>`;
+
+    const cards = entries.map(([type, count]) => {
+        const m = (virusTypeMeta || {})[type] || { label: type, emoji: '❓', color: '#64748b', desc: '' };
+        return `
+        <div id="av-cat-${type}"
+             data-type="${type}"
+             data-color="${m.color}"
+             onclick="filterEngineResults('${type}')"
+             style="
+                 cursor:pointer;transition:all 0.18s;
+                 display:flex;align-items:center;gap:10px;
+                 padding:10px 12px;
+                 background:${m.color}0d;
+                 border:1px solid ${m.color}30;
+                 border-radius:10px;
+             ">
+            <span style="font-size:22px;flex-shrink:0">${m.emoji}</span>
+            <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:700;color:${m.color}">${m.label}</div>
+                <div style="font-size:10px;color:var(--text-muted);margin-top:2px;
+                            overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.desc}</div>
+            </div>
+            <div style="
+                min-width:28px;height:28px;border-radius:50%;
+                background:${m.color}22;border:1.5px solid ${m.color}60;
+                display:flex;align-items:center;justify-content:center;
+                font-size:12px;font-weight:700;color:${m.color};flex-shrink:0
+            ">${count}</div>
+        </div>`;
+    }).join('');
+
+    return `
+    <div class="netguard-section-title" style="margin-top:0;margin-bottom:10px">
+        Virüs Kategorileri
+        <span style="color:var(--text-muted);font-weight:400;font-size:11px">
+            — bir kategoriye tıklayarak filtrele
+        </span>
+    </div>
+    <div id="av-cat-grid"
+         style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-bottom:24px">
+        ${allCard}
+        ${cards}
+    </div>`;
+}
+
+// ─── Kategori filtresi ────────────────────────────────────────────────────────
+function filterEngineResults(type) {
+    if (!lastEngineResult) return;
+    activeVirusFilter = type;
+
+    // Kategori kartlarının görsel durumunu güncelle
+    const allCard = document.getElementById('av-cat-all');
+    if (allCard) {
+        const isAll = type === null;
+        allCard.style.border        = isAll ? '2px solid rgba(129,140,248,0.8)' : '2px solid rgba(129,140,248,0.45)';
+        allCard.style.background    = isAll ? 'rgba(129,140,248,0.18)' : 'rgba(129,140,248,0.10)';
+        allCard.style.transform     = isAll ? 'scale(1.02)' : 'scale(1)';
+        allCard.style.boxShadow     = isAll ? '0 0 12px rgba(129,140,248,0.25)' : 'none';
+    }
+
+    document.querySelectorAll('[id^="av-cat-"]:not(#av-cat-all):not(#av-cat-grid)').forEach(card => {
+        const ct    = card.dataset.type;
+        const color = card.dataset.color || '#64748b';
+        const isActive = ct === type;
+        const isDimmed = type !== null && !isActive;
+        card.style.opacity   = isDimmed ? '0.4' : '1';
+        card.style.transform = isActive ? 'scale(1.02)' : 'scale(1)';
+        card.style.border    = isActive ? `2px solid ${color}` : `1px solid ${color}30`;
+        card.style.background = isActive ? `${color}22` : `${color}0d`;
+        card.style.boxShadow = isActive ? `0 0 12px ${color}40` : 'none';
+    });
+
+    // ── Filtre çubuğu ──
+    const filterBar = document.getElementById('av-filter-bar');
+    if (filterBar) {
+        if (type) {
+            const meta = (lastEngineResult.virusTypeMeta || {})[type] || {};
+            filterBar.style.display = 'flex';
+            filterBar.innerHTML = `
+            <span style="font-size:12px;color:var(--text-muted)">
+                Filtre:
+                <span style="color:${meta.color || '#818cf8'};font-weight:700">
+                    ${meta.emoji || ''} ${meta.label || type}
+                </span>
+            </span>
+            <button onclick="filterEngineResults(null)"
+                    style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;
+                           padding:2px 8px;font-size:11px;color:var(--text-muted);cursor:pointer">
+                ✕ Filtreyi Kaldır
+            </button>`;
+        } else {
+            filterBar.style.display = 'none';
+        }
+    }
+
+    // ── Dosya listesini filtrele ──
+    const listEl  = document.getElementById('av-file-list');
+    const countEl = document.getElementById('av-file-count');
+    if (listEl) {
+        const files = lastEngineResult.infectedFiles;
+        const filtered = type
+            ? files.map((f, i) => ({ f, i })).filter(({ f }) => f.virusTypes?.includes(type))
+            : files.map((f, i) => ({ f, i }));
+
+        if (countEl) countEl.textContent = type ? `${filtered.length} / ${files.length}` : files.length;
+
+        listEl.innerHTML = filtered.length > 0
+            ? filtered.map(({ f, i }) => _buildFileCard(f, i)).join('')
+            : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">
+                   Bu kategoride tehditli dosya bulunamadı.
+               </div>`;
+    }
+
+    // ── Süreç listesini filtrele ──
+    const procList  = document.getElementById('av-proc-list');
+    const procCount = document.getElementById('av-proc-count');
+    if (procList) {
+        const procs = lastEngineResult.suspiciousProcesses;
+        const filteredProcs = type
+            ? procs.map((p, i) => ({ p, i })).filter(({ p }) => p.virusType === type)
+            : procs.map((p, i) => ({ p, i }));
+
+        if (procCount) procCount.textContent = type
+            ? `(${filteredProcs.length} / ${procs.length})`
+            : `(${procs.length})`;
+
+        procList.innerHTML = filteredProcs.length > 0
+            ? filteredProcs.map(({ p, i }) => _buildProcessCard(p, i)).join('')
+            : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">
+                   Bu kategoride şüpheli süreç bulunamadı.
+               </div>`;
+    }
 }
 
 // ─── Ana sonuç render ─────────────────────────────────────────────────────────
@@ -1275,40 +1574,44 @@ function renderEngineResults(data) {
         badge.textContent   = total > 0 ? total : '';
     }
 
-    const elapsedSec = (data.elapsed / 1000).toFixed(1);
-    const scanTime   = new Date(data.scanTime).toLocaleTimeString('tr-TR');
+    const elapsedSec   = (data.elapsed / 1000).toFixed(1);
+    const scanTime     = new Date(data.scanTime).toLocaleTimeString('tr-TR');
     const totalThreats = data.threatCount + data.processRiskCount;
 
-    // ── Özet istatistikler ──
+    // ── Motor başlık kartı ──
     let html = `
-    <!-- Motor Başlık -->
-    <div class="health-card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(129,140,248,.08),rgba(6,182,212,.06));border-color:rgba(129,140,248,.25)">
+    <div class="health-card" style="margin-bottom:20px;
+         background:linear-gradient(135deg,rgba(129,140,248,.08),rgba(6,182,212,.06));
+         border-color:rgba(129,140,248,.25)">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px">
-                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#818cf8,#06b6d4);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                    <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <div style="width:38px;height:38px;border-radius:10px;
+                            background:linear-gradient(135deg,#818cf8,#06b6d4);
+                            display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="white" stroke-width="1.8"/>
                         <path d="M9 12l2 2 4-4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
                     </svg>
                 </div>
                 <div>
-                    <div style="font-weight:600;font-size:13px;color:var(--text-primary)">SysGuard Engine v1.0</div>
-                    <div style="font-size:10px;color:var(--text-muted)">${scanTime} · ${elapsedSec}s · ${data.totalScanned} dosya tarandı</div>
+                    <div style="font-weight:700;font-size:14px;color:var(--text-primary)">SysGuard Engine v1.1</div>
+                    <div style="font-size:10px;color:var(--text-muted)">
+                        ${scanTime} &nbsp;·&nbsp; ${elapsedSec}s &nbsp;·&nbsp; ${data.totalScanned} dosya
+                        ${data.singleFile ? `&nbsp;·&nbsp; ${data.scannedFile?.split('\\').pop()}` : `&nbsp;·&nbsp; ${data.scannedDirs?.length || 0} dizin`}
+                    </div>
                 </div>
             </div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap">
-                <div style="text-align:center">
-                    <div style="font-size:20px;font-weight:700;color:${data.criticalCount > 0 ? 'var(--priority-high)' : 'var(--text-primary)'}">${data.criticalCount}</div>
-                    <div style="font-size:10px;color:var(--text-muted)">Kritik</div>
-                </div>
-                <div style="text-align:center">
-                    <div style="font-size:20px;font-weight:700;color:${data.highCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)'}">${data.highCount}</div>
-                    <div style="font-size:10px;color:var(--text-muted)">Yüksek</div>
-                </div>
-                <div style="text-align:center">
-                    <div style="font-size:20px;font-weight:700;color:${data.processRiskCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)'}">${data.processRiskCount}</div>
-                    <div style="font-size:10px;color:var(--text-muted)">Şüpheli Süreç</div>
-                </div>
+            <!-- İstatistik sayaçları -->
+            <div style="display:flex;gap:18px;flex-wrap:wrap">
+                ${[
+                    { val: data.criticalCount,    label: 'Kritik',         color: data.criticalCount    > 0 ? 'var(--priority-high)'   : 'var(--text-primary)' },
+                    { val: data.highCount,         label: 'Yüksek',        color: data.highCount        > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
+                    { val: data.processRiskCount,  label: 'Şüpheli Süreç', color: data.processRiskCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
+                ].map(s => `
+                    <div style="text-align:center">
+                        <div style="font-size:20px;font-weight:700;color:${s.color}">${s.val}</div>
+                        <div style="font-size:10px;color:var(--text-muted)">${s.label}</div>
+                    </div>`).join('')}
             </div>
             <span class="priority-chip ${totalThreats === 0 ? 'low' : 'high'}" style="white-space:nowrap">
                 ${totalThreats === 0 ? '✓ Temiz' : `⚠ ${totalThreats} Tehdit`}
@@ -1319,25 +1622,34 @@ function renderEngineResults(data) {
     // ── Temiz durum ──
     if (totalThreats === 0) {
         html += `
-        <div class="empty-state" style="padding:40px 0">
-            <svg viewBox="0 0 24 24" fill="none" width="48" height="48">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="var(--accent-green)" stroke-width="1.5" stroke-linejoin="round"/>
+        <div id="av-scan-clean" class="empty-state" style="padding:44px 0">
+            <svg viewBox="0 0 24 24" fill="none" width="52" height="52">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                      stroke="var(--accent-green)" stroke-width="1.5" stroke-linejoin="round"/>
                 <path d="M9 12l2 2 4-4" stroke="var(--accent-green)" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
-            <h3 style="color:var(--accent-green)">Sistem Temiz</h3>
+            <h3 style="color:var(--accent-green);margin-top:12px">Sistem Temiz</h3>
             <p>Tarama tamamlandı — herhangi bir tehdit tespit edilmedi.</p>
-            <p style="font-size:11px;color:var(--text-muted)">${data.totalScanned} dosya incelendi · ${data.scannedDirs.length} dizin tarandı</p>
+            <p style="font-size:11px;color:var(--text-muted)">
+                ${data.singleFile
+                    ? `${data.scannedFile} tarandı`
+                    : `${data.totalScanned} dosya incelendi · ${data.scannedDirs?.length || 0} dizin tarandı`}
+            </p>
         </div>`;
         content.innerHTML = html;
         return;
     }
 
+    // ── Virüs türü özet paneli ──
+    html += _buildTypeBreakdown(data.typeBreakdown, data.virusTypeMeta);
+
     // ── Tehditli dosyalar ──
     if (data.infectedFiles.length > 0) {
         html += `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
             <div class="netguard-section-title" style="margin:0">
-                Tehditli Dosyalar <span style="color:var(--priority-high)">(${data.infectedFiles.length})</span>
+                Tehditli Dosyalar
+                <span id="av-file-count" style="color:var(--priority-high)">${data.infectedFiles.length}</span>
             </div>
             ${data.infectedFiles.length > 1 ? `
             <button class="btn-danger" style="font-size:11px" onclick="engineQuarantineAll(this)">
@@ -1348,7 +1660,13 @@ function renderEngineResults(data) {
                 Tümünü Karantinaya Al
             </button>` : ''}
         </div>
-        <div class="netguard-alert-list">
+        <div id="av-filter-bar"
+             style="display:none;align-items:center;justify-content:space-between;
+                    padding:6px 12px;margin-bottom:8px;
+                    background:rgba(129,140,248,0.08);border:1px solid rgba(129,140,248,0.2);
+                    border-radius:8px;gap:8px">
+        </div>
+        <div id="av-file-list" class="netguard-alert-list">
             ${data.infectedFiles.map((f, i) => _buildFileCard(f, i)).join('')}
         </div>`;
     }
@@ -1356,24 +1674,29 @@ function renderEngineResults(data) {
     // ── Şüpheli süreçler ──
     if (data.suspiciousProcesses.length > 0) {
         html += `
-        <div class="netguard-section-title" style="margin-top:24px">
-            Şüpheli Süreçler <span style="color:var(--priority-medium)">(${data.suspiciousProcesses.length})</span>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:28px;margin-bottom:8px">
+            <div class="netguard-section-title" style="margin:0">
+                Şüpheli Süreçler
+            </div>
+            <span id="av-proc-count" style="color:var(--priority-medium)">(${data.suspiciousProcesses.length})</span>
         </div>
-        <div class="netguard-alert-list">
+        <div id="av-proc-list" class="netguard-alert-list">
             ${data.suspiciousProcesses.map((p, i) => _buildProcessCard(p, i)).join('')}
         </div>`;
     }
 
-    // ── Tarama edilen dizinler ──
-    html += `
-    <div class="netguard-section-title" style="margin-top:24px">Taranan Dizinler</div>
-    <div class="health-card">
-        <div style="display:flex;flex-wrap:wrap;gap:5px">
-            ${data.scannedDirs.map(d =>
-                `<span style="background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.15);border-radius:5px;padding:2px 8px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">${d}</span>`
-            ).join('')}
-        </div>
-    </div>`;
+    // ── Tarama edilen dizinler (tek dosya modunda gizle) ──
+    if (!data.singleFile) {
+        html += `
+        <div class="netguard-section-title" style="margin-top:24px">Taranan Dizinler</div>
+        <div class="health-card">
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+                ${(data.scannedDirs || []).map(d =>
+                    `<span style="background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.15);border-radius:5px;padding:2px 8px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">${d}</span>`
+                ).join('')}
+            </div>
+        </div>`;
+    }
 
     content.innerHTML = html;
 }

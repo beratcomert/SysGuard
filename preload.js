@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // ─── SysGuard Virus Engine ────────────────────────────────────────────────
     engineScan:        ()           => ipcRenderer.invoke('engine-scan'),
+    engineScanFile:    (filePath)   => ipcRenderer.invoke('engine-scan-file', filePath),
+    showOpenDialog:    ()           => ipcRenderer.invoke('show-open-dialog'),
     engineQuarantine:  (filePath)   => ipcRenderer.invoke('engine-quarantine', filePath),
     engineDelete:      (filePath)   => ipcRenderer.invoke('engine-delete', filePath),
     engineKillProcess: (pid)        => ipcRenderer.invoke('engine-kill-process', pid),
