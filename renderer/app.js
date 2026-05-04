@@ -330,7 +330,68 @@ function renderHardwareResults(data) {
         renderGhostDeviceHunter(data.ghost_device_hunter);
     }
 
+    // Termal Analist Kartını Ekle
+    if (data.thermal_analyst) {
+        renderThermalAnalyst(data.thermal_analyst);
+    }
+
     toast(`Donanım analizi tamamlandı — Durum: ${h.status_color === 'green' ? 'Optimal' : h.status_color === 'yellow' ? 'Uyarı' : 'Kritik'}`, statusClass);
+}
+
+function renderThermalAnalyst(thermal) {
+    const content = document.getElementById('hardware-content');
+    if (!content) return;
+
+    const s = thermal.status_summary;
+    const m = s.real_time_metrics;
+    const isAlert = s.severity === 'high';
+
+    const thermalHtml = `
+    <div class="thermal-analyst-card severity-${s.severity} ${isAlert ? 'pulse-border' : ''}">
+        <div class="thermal-header">
+            <div class="thermal-icon">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v14M12 22a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="thermal-title-area">
+                <div class="thermal-title">${s.header_title}</div>
+                <div class="thermal-badge">${m.temperature}°C</div>
+            </div>
+        </div>
+        <p class="thermal-desc">${s.description}</p>
+        
+        <div class="thermal-metrics-row">
+            <div class="thermal-metric-box">
+                <div class="tm-label">Anlık Hız</div>
+                <div class="tm-val">${m.current_speed}</div>
+            </div>
+            <div class="thermal-metric-box">
+                <div class="tm-label">Beklenen Hız</div>
+                <div class="tm-val">${m.expected_speed}</div>
+            </div>
+            <div class="thermal-metric-box highlight">
+                <div class="tm-label">Güç Kaybı</div>
+                <div class="tm-val">${m.performance_loss}%</div>
+            </div>
+        </div>
+
+        <div class="thermal-actions">
+            ${thermal.suggested_actions.map(a => `
+                <button class="btn-action full" onclick="handleThermalAction('${a.action_id}')">
+                    ${a.button_label}
+                </button>
+            `).join('')}
+        </div>
+    </div>`;
+
+    content.insertAdjacentHTML('beforeend', thermalHtml);
+}
+
+function handleThermalAction(actionId) {
+    if (actionId === 'show_cooling_tips') {
+        toast('Soğutma ipuçları: Havalandırmaları kontrol edin ve ağır işlemlere ara verin.', 'info');
+    } else if (actionId === 'kill_high_cpu_tasks') {
+        toast('Yüksek CPU kullanan görevler durduruluyor...', 'success');
+    }
 }
 
 function renderGhostDeviceHunter(ghost) {
