@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cleanTemp:    () => ipcRenderer.invoke('clean-temp'),
     quickScan:    () => ipcRenderer.invoke('quick-scan'),
     deepScan:     () => ipcRenderer.invoke('deep-scan'),
+    getHardwareDiagnostics: () => ipcRenderer.invoke('get-hardware-diagnostics'),
 
     // ─── NetGuard: Ağ Taraması (Modül 1) ─────────────────────────────────────
     scanNetwork:           ()     => ipcRenderer.invoke('scan-network'),

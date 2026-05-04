@@ -10,6 +10,7 @@ const { scanNetwork, killProcessByPid, blockPort } = require('./system/network')
 const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats, getDefenderHistory } = require('./system/antivirus');
 const { runEngineScan, scanSingleFile, quarantineFile, deleteFile, killProcess } = require('./system/virusEngine');
+const { getHardwareDiagnostics }             = require('./system/hardware');
 
 let mainWindow = null;
 
@@ -66,6 +67,7 @@ ipcMain.handle('get-health', async () => getHealth());
 ipcMain.handle('clean-temp', async () => cleanTemp());
 ipcMain.handle('quick-scan', async () => runQuickScan());
 ipcMain.handle('deep-scan',  async () => runDeepScan());
+ipcMain.handle('get-hardware-diagnostics', async () => getHardwareDiagnostics());
 
 // ─── IPC: NetGuard (Modül 1) ─────────────────────────────────────────────────
 ipcMain.handle('scan-network', async () => {

@@ -207,6 +207,189 @@ function closeEcosystemOverlay() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MODÜL 5 — Hardware Diagnostics (Donanım) UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function refreshHardware() {
+    const content = document.getElementById('hardware-content');
+    const btn = document.getElementById('btn-refresh-hardware');
+    if (!content) return;
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Analiz ediliyor...'; }
+
+    content.innerHTML = `
+        <div class="agent-scanning">
+            <div class="scan-animation">
+                <div class="scan-ring r1"></div>
+                <div class="scan-ring r2"></div>
+                <div class="scan-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="url(#hwGrad2)" stroke-width="1.5"/><defs><linearGradient id="hwGrad2"><stop stop-color="#34d399"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+                </div>
+            </div>
+            <p class="scan-text">Donanım sağlığı analiz ediliyor...</p>
+            <p class="scan-sub">WMI ve S.M.A.R.T. verileri okunuyor</p>
+        </div>`;
+
+    try {
+        const data = await window.electronAPI.getHardwareDiagnostics();
+        if (data.error) throw new Error(data.error);
+        renderHardwareResults(data);
+    } catch (err) {
+        content.innerHTML = `<div class="empty-state"><p style="color:var(--priority-high)">Analiz hatası: ${err.message}</p></div>`;
+        toast('Donanım analizi başarısız.', 'error');
+    }
+
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Analiz Et`;
+    }
+}
+
+function renderHardwareResults(data) {
+    const content = document.getElementById('hardware-content');
+    if (!content) return;
+
+    const h = data.health_analysis;
+    const d = data.disk_info;
+    const statusClass = h.status_color; // green, yellow, red
+
+    let html = `
+    <div class="hardware-grid">
+        <!-- Sağlık Özeti Kartı -->
+        <div class="hardware-main-card ${statusClass}">
+            <div class="hw-card-header">
+                <div class="hw-status-badge ${statusClass}">${h.health_percentage}% Sağlık</div>
+                <div class="hw-title">${d.model_name}</div>
+                <div class="hw-sub">${d.drive_letter} — ${d.capacity}</div>
+            </div>
+            
+            <div class="hw-main-body">
+                <div class="hw-health-ring-container">
+                    <svg viewBox="0 0 100 100" class="hw-health-ring">
+                        <circle cx="50" cy="50" r="45" class="ring-bg"/>
+                        <circle cx="50" cy="50" r="45" class="ring-fill ${statusClass}" 
+                                style="stroke-dashoffset: ${282.7 - (h.health_percentage / 100) * 282.7}"/>
+                    </svg>
+                    <div class="hw-health-value">${h.health_percentage}%</div>
+                </div>
+                <div class="hw-analysis-text">
+                    <h3>${h.health_message}</h3>
+                    ${h.critical_warning ? `<p class="critical-text">⚠ ${h.critical_warning}</p>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <!-- Detay Kartları -->
+        <div class="hardware-stats-row">
+            <div class="hw-stat-card">
+                <div class="hw-stat-icon temp ${h.temperature.status_message.toLowerCase()}">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2v14M12 22a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="hw-stat-info">
+                    <div class="hw-stat-label">Sıcaklık</div>
+                    <div class="hw-stat-val">${h.temperature.value}${h.temperature.unit}</div>
+                    <div class="hw-stat-sub">${h.temperature.status_message}</div>
+                </div>
+            </div>
+            <div class="hw-stat-card">
+                <div class="hw-stat-icon hours">
+                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="hw-stat-info">
+                    <div class="hw-stat-label">Çalışma Süresi</div>
+                    <div class="hw-stat-val">${d.power_on_hours} Saat</div>
+                    <div class="hw-stat-sub">${d.power_cycle_count} Başlatma</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Önerilen Eylemler -->
+    <div class="hardware-actions-section">
+        <div class="section-header"><h2>Önerilen Eylemler</h2></div>
+        <div class="hw-actions-list">
+            ${data.suggested_actions.map(a => `
+                <div class="hw-action-card">
+                    <div class="hw-action-icon">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z" stroke="currentColor" stroke-width="1.8"/></svg>
+                    </div>
+                    <div class="hw-action-info">
+                        <div class="hw-action-title">${a.title}</div>
+                        <div class="hw-action-desc">${a.description}</div>
+                    </div>
+                    <button class="btn-action" onclick="handleHardwareAction('${a.action_id}')">${a.button_label}</button>
+                </div>
+            `).join('')}
+        </div>
+    </div>`;
+
+    content.innerHTML = html;
+
+    // Ghost Device Hunter Kartını Ekle
+    if (data.ghost_device_hunter) {
+        renderGhostDeviceHunter(data.ghost_device_hunter);
+    }
+
+    toast(`Donanım analizi tamamlandı — Durum: ${h.status_color === 'green' ? 'Optimal' : h.status_color === 'yellow' ? 'Uyarı' : 'Kritik'}`, statusClass);
+}
+
+function renderGhostDeviceHunter(ghost) {
+    const content = document.getElementById('hardware-content');
+    if (!content || !ghost.status_summary.total_ghost_devices) return;
+
+    const s = ghost.status_summary;
+
+    const ghostHtml = `
+    <div class="ghost-hunter-card severity-${s.severity}">
+        <div class="ghost-header">
+            <div class="ghost-icon">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 00-10 10c0 5.523 4.477 10 10 10s10-4.477 10-10A10 10 0 0012 2zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" opacity="0.2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="ghost-title-area">
+                <div class="ghost-title">${s.header_title}</div>
+                <div class="ghost-badge">${s.total_ghost_devices} Aygıt</div>
+            </div>
+        </div>
+        <p class="ghost-desc">${s.description}</p>
+        
+        <div class="ghost-device-list">
+            ${ghost.device_list.map(d => `
+                <div class="ghost-item">
+                    <div class="ghost-item-icon ${d.type}">
+                        ${d.type === 'usb' ? '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2v20M7 8l5-5 5 5M12 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' : '<svg viewBox="0 0 24 24" fill="none"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-2 4H8v-4h8v4z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'}
+                    </div>
+                    <div class="ghost-item-info">
+                        <div class="ghost-item-name">${d.name}</div>
+                        <div class="ghost-item-sub">En son ${d.last_seen} görüldü · Etki: ${d.registry_impact}</div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+
+        <div class="ghost-actions">
+            ${ghost.suggested_actions.map(a => `
+                <div class="ghost-action-warning">
+                    <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    <span>${a.warning}</span>
+                </div>
+                <button class="btn-danger full" onclick="toast('Hayalet sürücüler temizleniyor...', 'info')">
+                    ${a.button_label}
+                </button>
+            `).join('')}
+        </div>
+    </div>`;
+
+    content.insertAdjacentHTML('beforeend', ghostHtml);
+}
+
+function handleHardwareAction(actionId) {
+    if (actionId === 'trigger_system_backup_ui') {
+        toast('Yedekleme aracı başlatılıyor...', 'info');
+        window.electronAPI.openSettings('backup');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MODÜL 1 — NetGuard UI
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -631,6 +814,7 @@ function showTab(name) {
     document.getElementById(`tab-${name}`)?.classList.add('active');
     document.getElementById(`nav-${name}`)?.classList.add('active');
     if (name === 'health') refreshHealth();
+    if (name === 'hardware') refreshHardware();
     if (name === 'antivirus') avAutoStatus();
 }
 
