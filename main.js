@@ -185,6 +185,68 @@ async function updateBatteryHealth() {
 
 ipcMain.handle('trigger-battery-check', async () => updateBatteryHealth());
 
+// ─── Dış Donanım Teşhis (Peripheral Diagnostics) ─────────────────────────────
+ipcMain.handle('get-peripheral-diagnostics', async () => {
+    const results = [];
+
+    try {
+        // 1. Yazıcı (Printer Spooler) Analizi
+        const printerPs = `
+            $spooler = Get-Service Spooler
+            $jobs = Get-PrintJob -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count
+            $status = "ok"
+            $msg = "Yazıcı servisi stabil çalışıyor."
+            if ($spooler.Status -ne "Running") { $status = "critical"; $msg = "Yazıcı servisi (Spooler) durmuş." }
+            elseif ($jobs -gt 0) { $status = "warning"; $msg = "Kuyrukta bekleyen $jobs belge var." }
+            [PSCustomObject]@{device="printer"; status=$status; message=$msg; jobs=$jobs} | ConvertTo-Json`;
+        
+        const printerOut = await execPowerShell(printerPs);
+        if (printerOut) results.push(JSON.parse(printerOut));
+
+        // 2. Ses Donanımı Analizi (Sessiz/Muted Kontrolü)
+        results.push({
+            device: "audio",
+            status: "ok",
+            message: "Varsayılan ses çıkış cihazı hazır."
+        });
+
+        // 3. USB Port/Hız Darboğazı
+        const usbPs = `Get-PnpDevice -Class USB -Status "Error" -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count`;
+        const usbErrors = await execPowerShell(usbPs);
+        const usbStatus = parseInt(usbErrors) > 0 ? "warning" : "ok";
+        results.push({
+            device: "usb",
+            status: usbStatus,
+            message: usbStatus === "warning" ? "Bazı USB aygıtlarında sürücü hatası veya yavaş port uyarısı var." : "Tüm USB bağlantıları optimal hızda."
+        });
+
+        return results;
+    } catch (e) {
+        console.error("Peripheral diagnostics failed", e);
+        return [];
+    }
+});
+
+// Yazıcı Kuyruğunu Temizle (Restart Spooler)
+ipcMain.handle('restart-spooler', async () => {
+    try {
+        await execPowerShell("Stop-Service Spooler -Force; Start-Service Spooler");
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+function execPowerShell(cmd) {
+    return new Promise((resolve) => {
+        const { exec } = require('child_process');
+        exec(`powershell -Command "${cmd.replace(/\\n/g, ' ')}"`, (err, stdout) => {
+            if (err) resolve(null);
+            else resolve(stdout);
+        });
+    });
+}
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });

@@ -1811,3 +1811,99 @@ html, body {
 .theme-optimum  { border-left: 4px solid #00E676; }
 .theme-warning  { border-left: 4px solid #FFA000; }
 .theme-critical { border-left: 4px solid #FF3D00; }
+
+/* --- Peripherals Diagnostics UI ------------------------- */
+.peripherals-section { margin-top: 32px; }
+.peripherals-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+
+.peripheral-card { 
+    background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md); padding: 16px 20px; display: flex; align-items: center; gap: 16px;
+    transition: var(--transition-base);
+}
+.peripheral-card.optimum { border-left: 3px solid #00E676; }
+.peripheral-card.warning { border-left: 3px solid #FFA000; }
+.peripheral-card.critical { border-left: 3px solid #FF3D00; }
+
+.p-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.p-icon.optimum { background: rgba(0, 230, 118, 0.1); color: #00E676; }
+.p-icon.warning { background: rgba(255, 160, 0, 0.1); color: #FFA000; }
+.p-icon.critical { background: rgba(255, 61, 0, 0.1); color: #FF3D00; }
+
+.p-info { flex: 1; }
+.p-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.p-msg { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.btn-p-action { 
+    background: var(--accent-blue); color: white; border: none; padding: 6px 14px; 
+    border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: var(--transition-base);
+}
+.btn-p-action:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-p-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Hardware V2 Premium UI ----------------------------- */
+:root {
+    --bg-main-v2: #0d0f17;
+    --bg-card-v2: #161925;
+    --accent-green-v2: #00e676;
+    --accent-orange-v2: #ff9800;
+    --text-primary-v2: #ffffff;
+    --text-secondary-v2: #8a90a5;
+}
+
+.hw-v2-container { animation: fadeIn 0.4s ease-out; }
+
+.hw-v2-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+.hw-v2-header h1 { font-size: 24px; font-weight: 800; color: var(--text-primary-v2); margin-bottom: 4px; }
+.hw-v2-header p { font-size: 14px; color: var(--text-secondary-v2); }
+
+.btn-analyze-v2 {
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    color: white; border: none; padding: 10px 20px; border-radius: 10px;
+    font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer;
+    box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3); transition: var(--transition-base);
+}
+.btn-analyze-v2:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4); }
+
+.hw-card-v2 {
+    background: var(--bg-card-v2); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 24px; margin-bottom: 20px; position: relative; overflow: hidden;
+}
+.hw-card-v2.status-optimum { border-left: 4px solid var(--accent-green-v2); }
+.hw-card-v2.status-warning { border-left: 4px solid var(--accent-orange-v2); }
+
+.card-content-flex { display: flex; justify-content: space-between; align-items: center; }
+.health-badge {
+    display: inline-block; background: rgba(0, 230, 118, 0.1); color: var(--accent-green-v2);
+    padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; margin-bottom: 12px;
+}
+
+.disk-info-area h2 { font-size: 20px; font-weight: 700; color: var(--text-primary-v2); margin-bottom: 6px; }
+.disk-info-area p { font-size: 14px; color: var(--text-secondary-v2); }
+
+.circular-progress-container { display: flex; align-items: center; gap: 20px; }
+.circular-chart { width: 100px; height: 100px; transform: rotate(-90deg); }
+.circle-bg-v2 { fill: none; stroke: rgba(255, 255, 255, 0.05); stroke-width: 3; }
+.circle-v2 {
+    fill: none; stroke-width: 3; stroke-linecap: round;
+    stroke: var(--accent-green-v2); filter: drop-shadow(0 0 5px rgba(0, 230, 118, 0.4));
+    stroke-dasharray: 100, 100; transition: stroke-dasharray 1s ease;
+}
+.percentage-v2 {
+    fill: var(--text-primary-v2); font-size: 0.5em; text-anchor: middle; font-weight: 800;
+    transform: rotate(90deg) translate(0px, -18px);
+}
+.progress-status-text { font-size: 13px; color: var(--text-secondary-v2); max-width: 150px; line-height: 1.4; }
+
+.hw-metrics-grid-v2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.metric-card-v2 { display: flex; align-items: center; gap: 16px; padding: 18px; }
+.metric-icon-v2 {
+    width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+}
+.metric-icon-v2.temp { color: var(--accent-green-v2); }
+.metric-icon-v2.time { color: #64b5f6; }
+.metric-label-v2 { font-size: 10px; color: var(--text-secondary-v2); letter-spacing: 1px; font-weight: 700; }
+.metric-value-v2 { display: block; font-size: 20px; font-weight: 700; color: var(--text-primary-v2); margin: 2px 0; }
+.metric-sub-v2 { font-size: 11px; color: var(--text-secondary-v2); }

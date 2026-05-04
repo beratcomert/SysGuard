@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onThermalUpdate: (callback) => ipcRenderer.on('termal-guncelleme', (event, data) => callback(data)),
     triggerBatteryCheck: () => ipcRenderer.invoke('trigger-battery-check'),
     onBatteryUpdate: (callback) => ipcRenderer.on('battery-health-update', (event, data) => callback(data)),
+    getPeripheralDiagnostics: () => ipcRenderer.invoke('get-peripheral-diagnostics'),
+    restartSpooler: () => ipcRenderer.invoke('restart-spooler'),
 
     // ─── NetGuard: Ağ Taraması (Modül 1) ─────────────────────────────────────
     scanNetwork:           ()     => ipcRenderer.invoke('scan-network'),

@@ -1,10 +1,10 @@
 // ─── Durum ───────────────────────────────────────────────────────────────────
-let lastScanData       = null;
-let ecosystemState     = 'initializing'; // critical | medium | optimal
-let ecoAnimFrame       = null;
-let ecoParticles       = [];
-let lastNetworkData    = null;
-let chainRunning       = false;
+let lastScanData = null;
+let ecosystemState = 'initializing'; // critical | medium | optimal
+let ecoAnimFrame = null;
+let ecoParticles = [];
+let lastNetworkData = null;
+let chainRunning = false;
 
 // ─── IPC Dinleyiciler (Ana Süreçten Gelen Olaylar) ───────────────────────────
 if (window.electronAPI?.onUiEvent) {
@@ -30,11 +30,11 @@ if (window.electronAPI?.onChainStepProgress) {
  * @param {number} healthScore - 0..100 (100 = mükemmel)
  */
 function updateEcosystemState(healthScore) {
-    const fill       = document.getElementById('eco-health-fill');
-    const pct        = document.getElementById('eco-health-pct');
-    const label      = document.getElementById('eco-state-label');
-    const wrapper    = document.getElementById('eco-health-wrapper');
-    const dot        = document.getElementById('eco-dot');
+    const fill = document.getElementById('eco-health-fill');
+    const pct = document.getElementById('eco-health-pct');
+    const label = document.getElementById('eco-state-label');
+    const wrapper = document.getElementById('eco-health-wrapper');
+    const dot = document.getElementById('eco-dot');
     const statusText = document.getElementById('eco-status-text');
 
     if (!fill) return;
@@ -42,42 +42,42 @@ function updateEcosystemState(healthScore) {
     // Skor → durum eşleme
     let state, stateLabel, dotClass, statusMsg;
     if (healthScore < 40) {
-        state      = 'critical';
+        state = 'critical';
         stateLabel = '⚠ Kritik — Sistem optimizasyon gerektiriyor';
-        dotClass   = 'critical';
-        statusMsg  = 'Sistem kritik durumda';
+        dotClass = 'critical';
+        statusMsg = 'Sistem kritik durumda';
     } else if (healthScore < 75) {
-        state      = 'medium';
+        state = 'medium';
         stateLabel = '◆ Orta Seviye — Bazı iyileştirmeler mevcut';
-        dotClass   = 'medium';
-        statusMsg  = 'Sistem iyileştirilebilir';
+        dotClass = 'medium';
+        statusMsg = 'Sistem iyileştirilebilir';
     } else {
-        state      = 'optimal';
+        state = 'optimal';
         stateLabel = '✦ Optimize — Dijital ekosistem sağlıklı';
-        dotClass   = 'optimal';
-        statusMsg  = 'Sistem nefes alıyor';
+        dotClass = 'optimal';
+        statusMsg = 'Sistem nefes alıyor';
     }
 
     ecosystemState = state;
 
     // Yüzde barı güncelle
     fill.style.width = `${Math.min(healthScore, 100)}%`;
-    fill.className   = 'ecosystem-health-fill' +
+    fill.className = 'ecosystem-health-fill' +
         (healthScore >= 75 ? ' optimal' : healthScore >= 40 ? ' good' : '');
 
     if (pct) pct.textContent = `%${Math.round(healthScore)}`;
 
     // Etiket ve wrapper durum sınıfı
     if (label) {
-        label.textContent  = stateLabel;
-        label.className    = `ecosystem-state-label state-${state}`;
+        label.textContent = stateLabel;
+        label.className = `ecosystem-state-label state-${state}`;
     }
     if (wrapper) {
         wrapper.className = `ecosystem-health-bar-wrapper state-${state}`;
     }
 
     // Başlık çubuğu göstergesi
-    if (dot)        { dot.className   = `eco-dot ${dotClass}`; }
+    if (dot) { dot.className = `eco-dot ${dotClass}`; }
     if (statusText) { statusText.textContent = statusMsg; }
 }
 
@@ -86,13 +86,13 @@ function updateEcosystemState(healthScore) {
  */
 function calcHealthScore(scanData) {
     if (!scanData?.system) return 50;
-    const ram  = scanData.system.ram?.usagePercent || 50;
+    const ram = scanData.system.ram?.usagePercent || 50;
     const disk = scanData.system.disk?.drives?.find(d => d.name === 'C')?.usagePercent || 50;
     const high = (scanData.suggestions || []).filter(s => s.priority === 'high').length;
-    const med  = (scanData.suggestions || []).filter(s => s.priority === 'medium').length;
+    const med = (scanData.suggestions || []).filter(s => s.priority === 'medium').length;
 
     // Gerçekçi eğri: %40 RAM altı = tam puan, %100'de sıfır
-    const ramScore  = Math.max(0, 100 - Math.max(0, ram  - 40) * (100 / 60));
+    const ramScore = Math.max(0, 100 - Math.max(0, ram - 40) * (100 / 60));
     // Disk: %50 altı = tam puan, %100'de sıfır
     const diskScore = Math.max(0, 100 - Math.max(0, disk - 50) * (100 / 50));
     // Uyarılar: her yüksek -12, her orta -5
@@ -105,9 +105,9 @@ function calcHealthScore(scanData) {
 function initEcoCanvas() {
     const canvas = document.getElementById('ecosystem-canvas');
     if (!canvas) return;
-    canvas.width  = window.innerWidth;
+    canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    const ctx     = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
 
     // Parçacık havuzu temizle
     ecoParticles = Array.from({ length: 80 }, () => createParticle(canvas));
@@ -115,16 +115,16 @@ function initEcoCanvas() {
     function loop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ecoParticles.forEach(p => {
-            p.y  -= p.vy;
-            p.x  += Math.sin(p.t) * 0.5;
-            p.t  += 0.02;
+            p.y -= p.vy;
+            p.x += Math.sin(p.t) * 0.5;
+            p.t += 0.02;
             p.life -= 0.005;
             if (p.life <= 0) Object.assign(p, createParticle(canvas));
 
             ctx.save();
             ctx.globalAlpha = p.life * 0.8;
-            ctx.fillStyle   = p.color;
-            ctx.shadowBlur  = 12;
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = 12;
             ctx.shadowColor = p.color;
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
@@ -139,12 +139,12 @@ function initEcoCanvas() {
 function createParticle(canvas) {
     const colors = ['#06b6d4', '#818cf8', '#34d399', '#a5f3fc', '#c7d2fe'];
     return {
-        x:     Math.random() * canvas.width,
-        y:     canvas.height + 10,
-        vy:    0.5 + Math.random() * 2,
-        r:     1 + Math.random() * 3,
-        t:     Math.random() * Math.PI * 2,
-        life:  0.3 + Math.random() * 0.7,
+        x: Math.random() * canvas.width,
+        y: canvas.height + 10,
+        vy: 0.5 + Math.random() * 2,
+        r: 1 + Math.random() * 3,
+        t: Math.random() * Math.PI * 2,
+        life: 0.3 + Math.random() * 0.7,
         color: colors[Math.floor(Math.random() * colors.length)],
     };
 }
@@ -159,8 +159,8 @@ function stopEcoCanvas() {
  * @param {Object} opts - { freedMB, closedPorts, subtitle }
  */
 function triggerEcosystemRestore(levelOrOpts) {
-    const overlay  = document.getElementById('ecosystem-overlay');
-    const statsEl  = document.getElementById('ecosystem-stats');
+    const overlay = document.getElementById('ecosystem-overlay');
+    const statsEl = document.getElementById('ecosystem-stats');
     const subtitle = document.getElementById('ecosystem-subtitle');
     if (!overlay) return;
 
@@ -168,9 +168,9 @@ function triggerEcosystemRestore(levelOrOpts) {
     const opts = (typeof levelOrOpts === 'object' && levelOrOpts !== null)
         ? levelOrOpts
         : {};
-    const freedMB     = opts.freedMB     || 0;
+    const freedMB = opts.freedMB || 0;
     const closedPorts = opts.closedPorts || 0;
-    const chainSteps  = opts.chainSteps  || 0;
+    const chainSteps = opts.chainSteps || 0;
 
     // Alt başlık
     if (subtitle) {
@@ -307,6 +307,14 @@ function renderHardwareResults(data) {
     <!-- Batarya Sağlık Raporu (Yeni Modül) -->
     <div id="battery-card-container" class="battery-card-container">
         <div class="empty-state mini">Batarya verileri taranıyor...</div>
+    </div>
+
+    <!-- Dış Donanım Teşhis (Yeni Modül) -->
+    <div class="peripherals-section">
+        <div class="section-header"><h2>Dış Donanım Teşhisi</h2></div>
+        <div id="peripherals-content" class="peripherals-grid">
+            <div class="empty-state mini">Periferik aygıtlar kontrol ediliyor...</div>
+        </div>
     </div>
 
     <!-- Önerilen Eylemler -->
@@ -460,7 +468,7 @@ function handleHardwareAction(actionId) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function runNetworkScan() {
-    const btn     = document.getElementById('btn-scan-network');
+    const btn = document.getElementById('btn-scan-network');
     const content = document.getElementById('netguard-content');
     if (!content) return;
 
@@ -491,8 +499,8 @@ async function runNetworkScan() {
     }
 
     if (btn) {
-        btn.disabled    = false;
-        btn.innerHTML   = `<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Ağı Tara`;
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Ağı Tara`;
     }
 }
 
@@ -500,11 +508,11 @@ function renderNetworkResults(data) {
     const content = document.getElementById('netguard-content');
     if (!content) return;
 
-    const totalAlerts   = (data.alerts?.length   || 0) + (data.suspicious?.length || 0);
-    const hasDataLeak   = !!data.dataLeakAlert;
-    const connections   = data.totalConnections || 0;
-    const sentMB        = data.netUsage?.totalSentMB || '—';
-    const recvMB        = data.netUsage?.totalReceivedMB || '—';
+    const totalAlerts = (data.alerts?.length || 0) + (data.suspicious?.length || 0);
+    const hasDataLeak = !!data.dataLeakAlert;
+    const connections = data.totalConnections || 0;
+    const sentMB = data.netUsage?.totalSentMB || '—';
+    const recvMB = data.netUsage?.totalReceivedMB || '—';
 
     // Özet kartlar
     let html = `
@@ -552,7 +560,7 @@ function renderNetworkResults(data) {
                 : `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 
             html += `
-            <div class="ng-alert-card level-${a.level}" style="animation-delay:${i*60}ms">
+            <div class="ng-alert-card level-${a.level}" style="animation-delay:${i * 60}ms">
                 <div class="ng-alert-header">
                     <div class="ng-alert-icon ${iconLevel}">${icon}</div>
                     <div class="ng-alert-title">${a.message}</div>
@@ -593,12 +601,12 @@ function renderNetworkResults(data) {
 }
 
 function updateNetguardBadge(data) {
-    const badge  = document.getElementById('netguard-badge');
+    const badge = document.getElementById('netguard-badge');
     const alerts = (data?.alerts?.length || 0) + (data?.suspicious?.length || 0);
     if (!badge) return;
     if (alerts > 0 || data?.dataLeakAlert) {
         badge.style.display = 'flex';
-        badge.textContent   = '!';
+        badge.textContent = '!';
     } else {
         badge.style.display = 'none';
     }
@@ -674,24 +682,24 @@ async function runOneClickOptimize() {
     });
 
     // Progress göster
-    const runDiv   = document.getElementById('chain-running');
+    const runDiv = document.getElementById('chain-running');
     const resultEl = document.getElementById('chain-result');
-    const logEl    = document.getElementById('chain-log');
-    const barEl    = document.getElementById('chain-progress-bar');
+    const logEl = document.getElementById('chain-log');
+    const barEl = document.getElementById('chain-progress-bar');
     const progText = document.getElementById('chain-progress-text');
 
-    if (runDiv)   runDiv.style.display   = 'block';
+    if (runDiv) runDiv.style.display = 'block';
     if (resultEl) resultEl.style.display = 'none';
-    if (logEl)    logEl.innerHTML        = '';
-    if (barEl)    barEl.style.width      = '5%';
-    if (progText) progText.textContent   = 'Zincir başlatılıyor...';
+    if (logEl) logEl.innerHTML = '';
+    if (barEl) barEl.style.width = '5%';
+    if (progText) progText.textContent = 'Zincir başlatılıyor...';
 
     try {
-        const chain  = await window.electronAPI.getOneClickChain();
+        const chain = await window.electronAPI.getOneClickChain();
         const result = await window.electronAPI.runTaskChain(chain);
 
         // Sonuç göster
-        if (runDiv)   runDiv.style.display   = 'none';
+        if (runDiv) runDiv.style.display = 'none';
         if (resultEl) resultEl.style.display = 'block';
         renderChainResult(result);
 
@@ -729,32 +737,31 @@ function updateChainStepUI(step) {
     chainStepStatusMap[step.step_order] = step;
 
     const totalSteps = 5;
-    const done       = Object.values(chainStepStatusMap).filter(s => s.status !== 'running').length;
-    const pct        = Math.round((done / totalSteps) * 100);
+    const done = Object.values(chainStepStatusMap).filter(s => s.status !== 'running').length;
+    const pct = Math.round((done / totalSteps) * 100);
 
     // Progress bar
-    const barEl    = document.getElementById('chain-progress-bar');
+    const barEl = document.getElementById('chain-progress-bar');
     const progText = document.getElementById('chain-progress-text');
-    if (barEl)    barEl.style.width    = `${Math.max(pct, 5)}%`;
+    if (barEl) barEl.style.width = `${Math.max(pct, 5)}%`;
     if (progText) progText.textContent = `Adım ${done}/${totalSteps} tamamlandı...`;
 
     // Adım durum etiketi
     const stepEl = document.getElementById(`cstep-${step.step_order}`);
-    const item   = document.querySelector(`.chain-step-item[data-step="${step.step_order}"]`);
+    const item = document.querySelector(`.chain-step-item[data-step="${step.step_order}"]`);
 
     if (stepEl) {
         stepEl.textContent = step.status === 'completed' ? '✓ Tamam'
-            : step.status === 'failed'    ? '✗ Hata'
-            : step.status === 'skipped'   ? '→ Atlandı'
-            : '⟳ Çalışıyor';
+            : step.status === 'failed' ? '✗ Hata'
+                : step.status === 'skipped' ? '→ Atlandı'
+                    : '⟳ Çalışıyor';
     }
     if (item) {
-        item.className = `chain-step-item ${
-            step.status === 'completed' ? 'done'
-            : step.status === 'failed'  ? 'failed'
-            : step.status === 'skipped' ? 'skipped'
-            : 'running'
-        }`;
+        item.className = `chain-step-item ${step.status === 'completed' ? 'done'
+                : step.status === 'failed' ? 'failed'
+                    : step.status === 'skipped' ? 'skipped'
+                        : 'running'
+            }`;
     }
 
     // Log
@@ -839,15 +846,15 @@ async function refreshScanDataSilent() {
         updateBadge(data.suggestions.filter(s => s.priority === 'high').length);
         const score = calcHealthScore(data);
         updateEcosystemState(score);
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // ─── Toast Bildirimleri ───────────────────────────────────────────────────────
 function toast(message, type = 'info') {
     const icons = {
         success: `<svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
-        error:   `<svg viewBox="0 0 24 24" fill="none"><path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>`,
-        info:    `<svg viewBox="0 0 24 24" fill="none"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>`
+        error: `<svg viewBox="0 0 24 24" fill="none"><path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>`,
+        info: `<svg viewBox="0 0 24 24" fill="none"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.8"/></svg>`
     };
     const el = document.createElement('div');
     el.className = `toast ${type}`;
@@ -880,28 +887,28 @@ window.electronAPI?.onThermalUpdate((data) => {
     if (!thermalCard) return;
 
     // ID'leri prompta göre güncelleme/eşleme
-    const tempEl   = document.getElementById('thermal-temp') || thermalCard.querySelector('.thermal-badge');
-    const currEl   = document.getElementById('current-speed') || thermalCard.querySelectorAll('.tm-val')[0];
-    const expEl    = document.getElementById('expected-speed') || thermalCard.querySelectorAll('.tm-val')[1];
-    const lossEl   = document.getElementById('power-loss') || thermalCard.querySelectorAll('.tm-val')[2];
-    const titleEl  = document.getElementById('thermal-title') || thermalCard.querySelector('.thermal-title');
-    const descEl   = document.getElementById('thermal-desc') || thermalCard.querySelector('.thermal-desc');
+    const tempEl = document.getElementById('thermal-temp') || thermalCard.querySelector('.thermal-badge');
+    const currEl = document.getElementById('current-speed') || thermalCard.querySelectorAll('.tm-val')[0];
+    const expEl = document.getElementById('expected-speed') || thermalCard.querySelectorAll('.tm-val')[1];
+    const lossEl = document.getElementById('power-loss') || thermalCard.querySelectorAll('.tm-val')[2];
+    const titleEl = document.getElementById('thermal-title') || thermalCard.querySelector('.thermal-title');
+    const descEl = document.getElementById('thermal-desc') || thermalCard.querySelector('.thermal-desc');
 
     if (tempEl) tempEl.textContent = `${data.cpu_temp}°C`;
     if (currEl) currEl.textContent = `${data.current_mhz} MHz`;
-    if (expEl)  expEl.textContent  = `${data.max_mhz} MHz`;
-    if (lossEl) lossEl.textContent  = `%${data.performance_loss}`;
+    if (expEl) expEl.textContent = `${data.max_mhz} MHz`;
+    if (lossEl) lossEl.textContent = `%${data.performance_loss}`;
     if (titleEl) titleEl.textContent = data.title;
-    if (descEl)  descEl.textContent  = data.description;
+    if (descEl) descEl.textContent = data.description;
 
     // Tema Uygulaması
     if (data.theme === "critical") {
         if (titleEl) titleEl.style.color = "#ff4d4d";
-        if (tempEl)  tempEl.style.background = "rgba(255, 77, 77, 0.2)";
+        if (tempEl) tempEl.style.background = "rgba(255, 77, 77, 0.2)";
         thermalCard.className = "thermal-analyst-card severity-high pulse-border";
     } else if (data.theme === "warning") {
         if (titleEl) titleEl.style.color = "#ffa500";
-        if (tempEl)  tempEl.style.background = "rgba(255, 165, 0, 0.2)";
+        if (tempEl) tempEl.style.background = "rgba(255, 165, 0, 0.2)";
         thermalCard.className = "thermal-analyst-card severity-medium";
     } else {
         if (titleEl) titleEl.style.color = "#ffffff";
@@ -963,23 +970,23 @@ window.electronAPI?.onBatteryUpdate((data) => {
 
     // ID'lere göre güncelleme
     const healthEl = document.getElementById('battery-health-percent');
-    const wearEl   = document.getElementById('battery-wear-percent');
-    const dCapEl   = document.getElementById('battery-design-cap');
-    const mCapEl   = document.getElementById('battery-max-cap');
-    const titleEl  = document.getElementById('battery-title');
-    const descEl   = document.getElementById('battery-desc');
+    const wearEl = document.getElementById('battery-wear-percent');
+    const dCapEl = document.getElementById('battery-design-cap');
+    const mCapEl = document.getElementById('battery-max-cap');
+    const titleEl = document.getElementById('battery-title');
+    const descEl = document.getElementById('battery-desc');
 
     if (healthEl) healthEl.textContent = `%${data.health_percent}`;
-    if (wearEl)   wearEl.textContent   = `%${data.wear_percent}`;
-    if (dCapEl)   dCapEl.textContent   = data.design_cap;
-    if (mCapEl)   mCapEl.textContent   = data.max_cap;
-    if (titleEl)  titleEl.textContent  = data.title;
-    if (descEl)   descEl.textContent   = data.description;
+    if (wearEl) wearEl.textContent = `%${data.wear_percent}`;
+    if (dCapEl) dCapEl.textContent = data.design_cap;
+    if (mCapEl) mCapEl.textContent = data.max_cap;
+    if (titleEl) titleEl.textContent = data.title;
+    if (descEl) descEl.textContent = data.description;
 
     // Tema Renkleri
     const colors = { optimum: "#00E676", warning: "#FFA000", critical: "#FF3D00" };
     if (titleEl) titleEl.style.color = colors[data.theme];
-    
+
     // Kart Görünümü
     container.className = `battery-card-container active theme-${data.theme}`;
 });
@@ -992,24 +999,86 @@ function showTab(name) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById(`tab-${name}`)?.classList.add('active');
     document.getElementById(`nav-${name}`)?.classList.add('active');
-    
+
     if (name === 'health') refreshHealth();
     if (name === 'hardware') {
         refreshHardware().then(() => {
-            window.electronAPI?.triggerBatteryCheck(); // Kart oluştuktan sonra veriyi iste
+            window.electronAPI?.triggerBatteryCheck();
+            refreshPeripherals(); // Dış donanım kontrolünü başlat
         });
     }
     if (name === 'antivirus') avAutoStatus();
+}
+
+async function refreshPeripherals() {
+    const container = document.getElementById('peripherals-content');
+    if (!container) return;
+
+    try {
+        const results = await window.electronAPI.getPeripheralDiagnostics();
+        renderPeripherals(results);
+    } catch (e) {
+        container.innerHTML = `<div class="empty-state">Bağlantı hatası: ${e.message}</div>`;
+    }
+}
+
+function renderPeripherals(data) {
+    const container = document.getElementById('peripherals-content');
+    if (!container) return;
+
+    container.innerHTML = data.map(d => {
+        const statusClass = d.status === 'ok' ? 'optimum' : d.status === 'warning' ? 'warning' : 'critical';
+        const icon = getPeripheralIcon(d.device);
+
+        return `
+            <div class="peripheral-card ${statusClass}">
+                <div class="p-icon ${statusClass}">${icon}</div>
+                <div class="p-info">
+                    <div class="p-name">${getPeripheralTitle(d.device)}</div>
+                    <div class="p-msg">${d.message}</div>
+                </div>
+                ${d.device === 'printer' && d.status !== 'ok' ? `
+                    <button class="btn-p-action" onclick="handleSpoolerRestart(this)">Kuyruğu Temizle</button>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function getPeripheralIcon(device) {
+    if (device === 'printer') return '<svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-2 4H8v-4h8v4z" stroke="currentColor" stroke-width="2"/></svg>';
+    if (device === 'audio') return '<svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07" stroke="currentColor" stroke-width="2"/></svg>';
+    if (device === 'usb') return '<svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 2v20M7 8l5-5 5 5M12 3v10" stroke="currentColor" stroke-width="2"/></svg>';
+    return '';
+}
+
+function getPeripheralTitle(device) {
+    const titles = { printer: 'Yazıcı Durumu', audio: 'Ses Aygıtları', usb: 'USB Bağlantıları' };
+    return titles[device] || 'Bilinmeyen Aygıt';
+}
+
+async function handleSpoolerRestart(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Temizleniyor...';
+    const res = await window.electronAPI.restartSpooler();
+    if (res.success) {
+        toast('Yazıcı kuyruğu başarıyla temizlendi.', 'success');
+        refreshPeripherals();
+    } else {
+        toast('Hata: Yetki yetersiz olabilir.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Tekrar Dene';
+    }
 }
 
 // ─── Kategori Simgesi ─────────────────────────────────────────────────────────
 function categoryIcon(cat) {
     const icons = {
         performance: `<svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-        disk_space:  `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="7" rx="9" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M3 7v10c0 1.657 4.03 3 9 3s9-1.343 9-3V7" stroke="currentColor" stroke-width="1.8"/></svg>`,
-        security:    `<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
-        hardware:    `<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="9" y="9" width="6" height="6" fill="currentColor" opacity="0.4"/></svg>`,
-        privacy:     `<svg viewBox="0 0 24 24" fill="none"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.8"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="1.8"/></svg>`
+        disk_space: `<svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="7" rx="9" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M3 7v10c0 1.657 4.03 3 9 3s9-1.343 9-3V7" stroke="currentColor" stroke-width="1.8"/></svg>`,
+        security: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`,
+        hardware: `<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="9" y="9" width="6" height="6" fill="currentColor" opacity="0.4"/></svg>`,
+        privacy: `<svg viewBox="0 0 24 24" fill="none"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.8"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="1.8"/></svg>`
     };
     return icons[cat] || icons.performance;
 }
@@ -1069,8 +1138,8 @@ function buildPreviewCard(s) {
 async function handleAction({ type, payload }) {
     try {
         if (type === 'background_process') {
-            if (payload === 'clean_temp')  { await doCleanTemp(); return; }
-            if (payload === 'clean_ram')   { toast('Bellek için gereksiz uygulamaları kapatın.', 'info'); return; }
+            if (payload === 'clean_temp') { await doCleanTemp(); return; }
+            if (payload === 'clean_ram') { toast('Bellek için gereksiz uygulamaları kapatın.', 'info'); return; }
             if (payload === 'security_scan') { await window.electronAPI.openSettings('security'); return; }
         }
         if (type === 'open_folder') {
@@ -1095,7 +1164,7 @@ async function handleAction({ type, payload }) {
 function updateBadge(count) {
     const badge = document.getElementById('agent-badge');
     if (count > 0) { badge.style.display = 'flex'; badge.textContent = count; }
-    else             badge.style.display = 'none';
+    else badge.style.display = 'none';
 }
 
 // ─── Dashboard Metrikleri ─────────────────────────────────────────────────────
@@ -1105,13 +1174,13 @@ function updateDashboardMetrics(sys) {
 
     const ramPct = sys.ram?.usagePercent || 0;
     document.getElementById('ram-value').textContent = `%${ramPct}`;
-    document.getElementById('ram-sub').textContent   = `${toGB(sys.ram?.used)} / ${toGB(sys.ram?.total)} GB`;
+    document.getElementById('ram-sub').textContent = `${toGB(sys.ram?.used)} / ${toGB(sys.ram?.total)} GB`;
     setRingProgress('ram-ring', ramPct);
 
     const cDrive = sys.disk?.drives?.find(d => d.name === 'C');
     if (cDrive) {
         document.getElementById('disk-value').textContent = `%${cDrive.usagePercent}`;
-        document.getElementById('disk-sub').textContent   = `${toGB(cDrive.free)} GB boş`;
+        document.getElementById('disk-sub').textContent = `${toGB(cDrive.free)} GB boş`;
         setRingProgress('disk-ring', cDrive.usagePercent);
     }
 
@@ -1119,7 +1188,7 @@ function updateDashboardMetrics(sys) {
     document.getElementById('uptime-value').textContent = upH > 24 ? `${(upH / 24).toFixed(1)}g` : `${upH}s`;
 
     document.getElementById('cpu-value').textContent = sys.cpu?.cores ? `${sys.cpu.cores} Çekirdek` : 'Aktif';
-    document.getElementById('cpu-sub').textContent   = sys.hostname || 'Windows';
+    document.getElementById('cpu-sub').textContent = sys.hostname || 'Windows';
     setRingProgress('cpu-ring', 35);
 }
 
@@ -1145,9 +1214,9 @@ function renderScanResults(data) {
     const score = calcHealthScore(data);
     updateEcosystemState(score);
 
-    const isDeep   = data.scanType === 'deep';
+    const isDeep = data.scanType === 'deep';
     const typeChip = `<span class="scan-type-chip ${isDeep ? 'deep' : 'quick'}">${isDeep ? '⬛ Detaylı' : '⚡ Hızlı'}</span>`;
-    const time     = new Date(data.timestamp).toLocaleTimeString('tr-TR');
+    const time = new Date(data.timestamp).toLocaleTimeString('tr-TR');
     const highCount = (data.suggestions || []).filter(s => s.priority === 'high').length;
 
     if (!data.suggestions?.length) {
@@ -1182,20 +1251,20 @@ function renderScanResults(data) {
 
 // ─── HIZLI TARAMA ─────────────────────────────────────────────────────────────
 async function runQuickScanUI() {
-    const qBtn     = document.getElementById('btn-quick-scan');
-    const dBtn     = document.getElementById('btn-deep-scan');
+    const qBtn = document.getElementById('btn-quick-scan');
+    const dBtn = document.getElementById('btn-deep-scan');
     const dDashBtn = document.getElementById('btn-scan-dashboard');
-    const loading  = document.getElementById('agent-loading');
-    const results  = document.getElementById('agent-results');
+    const loading = document.getElementById('agent-loading');
+    const results = document.getElementById('agent-results');
 
     [qBtn, dBtn, dDashBtn].forEach(b => b && (b.disabled = true));
     loading.style.display = 'block';
     results.style.display = 'none';
 
     const scanText = document.querySelector('.scan-text');
-    const scanSub  = document.querySelector('.scan-sub');
+    const scanSub = document.querySelector('.scan-sub');
     if (scanText) scanText.textContent = 'Hızlı tarama yapılıyor...';
-    if (scanSub)  scanSub.textContent  = 'Bu yalnızca 1-2 saniye sürer';
+    if (scanSub) scanSub.textContent = 'Bu yalnızca 1-2 saniye sürer';
 
     try {
         const data = await window.electronAPI.quickScan();
@@ -1215,8 +1284,8 @@ async function runQuickScanUI() {
 
 // ─── DETAYLI TARAMA ───────────────────────────────────────────────────────────
 async function runDeepScanUI() {
-    const qBtn    = document.getElementById('btn-quick-scan');
-    const dBtn    = document.getElementById('btn-deep-scan');
+    const qBtn = document.getElementById('btn-quick-scan');
+    const dBtn = document.getElementById('btn-deep-scan');
     const loading = document.getElementById('agent-loading');
     const results = document.getElementById('agent-results');
 
@@ -1227,12 +1296,12 @@ async function runDeepScanUI() {
     results.style.display = 'none';
 
     const scanText = document.querySelector('.scan-text');
-    const scanSub  = document.querySelector('.scan-sub');
+    const scanSub = document.querySelector('.scan-sub');
     if (scanText) scanText.textContent = 'Derin sistem analizi yapılıyor...';
-    if (scanSub)  scanSub.textContent  = 'PowerShell ile işlem, disk ve güvenlik analizi...';
+    if (scanSub) scanSub.textContent = 'PowerShell ile işlem, disk ve güvenlik analizi...';
 
     const agentLoading = document.getElementById('agent-loading');
-    const progressBar  = document.createElement('div');
+    const progressBar = document.createElement('div');
     progressBar.className = 'deep-scan-progress';
     progressBar.innerHTML = '<div class="deep-scan-bar"></div>';
     agentLoading.querySelector('.agent-scanning')?.appendChild(progressBar);
@@ -1263,12 +1332,12 @@ async function refreshHealth() {
     container.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Yükleniyor...</p></div>`;
 
     try {
-        const data  = await window.electronAPI.quickScan();
-        const sys   = data.system;
-        const ram   = sys.ram || {};
+        const data = await window.electronAPI.quickScan();
+        const sys = data.system;
+        const ram = sys.ram || {};
         const ramPct = parseFloat(ram.usagePercent || 0);
         const drives = sys.disk?.drives || [];
-        const toGB  = b => b ? (b / 1024 ** 3).toFixed(1) : '?';
+        const toGB = b => b ? (b / 1024 ** 3).toFixed(1) : '?';
 
         const diskBars = drives.map(d => `
             <div class="health-bar-row">
@@ -1335,17 +1404,17 @@ async function refreshHealth() {
 
 // ─── Temp Temizle ─────────────────────────────────────────────────────────────
 async function doCleanTemp() {
-    const btn    = document.getElementById('btn-clean-temp');
+    const btn = document.getElementById('btn-clean-temp');
     const status = document.getElementById('temp-status');
     if (btn) { btn.disabled = true; btn.textContent = 'Temizleniyor...'; }
     if (status) status.textContent = 'İşlemde...';
     try {
         const res = await window.electronAPI.cleanTemp();
-        const mb  = res.freedMB || 0;
+        const mb = res.freedMB || 0;
         if (status) status.textContent = res.status === 'cleaned'
             ? `✓ Temizlendi — ${mb} MB boşaltıldı`
             : '⚠ Kısmen temizlendi';
-        const panel   = document.getElementById('clean-result');
+        const panel = document.getElementById('clean-result');
         const content = document.getElementById('clean-result-content');
         if (panel && content) {
             panel.style.display = 'block';
@@ -1381,30 +1450,30 @@ async function openStartupApps() {
 // Windows Defender'dan bağımsız, tamamen özel tarama motoru arayüzü
 // ═══════════════════════════════════════════════════════════════════════════════
 
-let avScanning   = false;
-let lastEngineResult  = null; // Son tarama sonucu (karantina/sil için saklanır)
+let avScanning = false;
+let lastEngineResult = null; // Son tarama sonucu (karantina/sil için saklanır)
 let activeVirusFilter = null; // Aktif kategori filtresi
 
 // ─── Engine ilerleme dinleyicisi ─────────────────────────────────────────────
 if (window.electronAPI?.onEngineScanProgress) {
     window.electronAPI.onEngineScanProgress((prog) => {
-        const bar  = document.getElementById('av-progress-bar');
-        const pct  = document.getElementById('av-progress-pct');
+        const bar = document.getElementById('av-progress-bar');
+        const pct = document.getElementById('av-progress-pct');
         const text = document.getElementById('av-scan-text');
-        const sub  = document.getElementById('av-scan-sub');
-        if (bar)  bar.style.width    = `${prog.percent}%`;
-        if (pct)  pct.textContent    = `%${prog.percent}`;
-        if (text) text.textContent   = prog.detail || 'Taranıyor…';
-        if (sub)  sub.textContent    = _enginePhaseLabel(prog.phase);
+        const sub = document.getElementById('av-scan-sub');
+        if (bar) bar.style.width = `${prog.percent}%`;
+        if (pct) pct.textContent = `%${prog.percent}`;
+        if (text) text.textContent = prog.detail || 'Taranıyor…';
+        if (sub) sub.textContent = _enginePhaseLabel(prog.phase);
     });
 }
 
 function _enginePhaseLabel(phase) {
     const map = {
-        init:      'Tarama dizinleri belirleniyor',
-        scanning:  'Dosyalar hash ve imza ile analiz ediliyor',
+        init: 'Tarama dizinleri belirleniyor',
+        scanning: 'Dosyalar hash ve imza ile analiz ediliyor',
         processes: 'Çalışan süreçler inceleniyor',
-        done:      'Sonuçlar hazırlanıyor…',
+        done: 'Sonuçlar hazırlanıyor…',
     };
     return map[phase] || '';
 }
@@ -1416,10 +1485,10 @@ function avSetBusy(busy) {
         const el = document.getElementById(id);
         if (el) el.disabled = busy;
     });
-    const scanEl    = document.getElementById('av-scanning');
+    const scanEl = document.getElementById('av-scanning');
     const contentEl = document.getElementById('av-content');
-    if (scanEl)    scanEl.style.display    = busy ? 'block' : 'none';
-    if (contentEl) contentEl.style.display = busy ? 'none'  : 'block';
+    if (scanEl) scanEl.style.display = busy ? 'block' : 'none';
+    if (contentEl) contentEl.style.display = busy ? 'none' : 'block';
 }
 
 // ─── Tek dosya taraması ───────────────────────────────────────────────────────
@@ -1438,9 +1507,9 @@ async function scanSingleFileUI() {
     if (pct) pct.textContent = '%10';
 
     const textEl = document.getElementById('av-scan-text');
-    const subEl  = document.getElementById('av-scan-sub');
+    const subEl = document.getElementById('av-scan-sub');
     if (textEl) textEl.textContent = `Taranıyor: ${filePath.split('\\').pop()}`;
-    if (subEl)  subEl.textContent  = 'Hash, imza ve heuristik analiz yapılıyor…';
+    if (subEl) subEl.textContent = 'Hash, imza ve heuristik analiz yapılıyor…';
 
     try {
         toast('Dosya taraması başlatıldı…', 'info');
@@ -1475,8 +1544,8 @@ async function runAvScanUI() {
 
     const bar = document.getElementById('av-progress-bar');
     const pct = document.getElementById('av-progress-pct');
-    if (bar) bar.style.width  = '3%';
-    if (pct) pct.textContent  = '%3';
+    if (bar) bar.style.width = '3%';
+    if (pct) pct.textContent = '%3';
 
     try {
         toast('SysGuard Engine taraması başlatıldı…', 'info');
@@ -1486,7 +1555,7 @@ async function runAvScanUI() {
         renderEngineResults(data);
 
         const total = data.threatCount + data.processRiskCount;
-        const msg   = total > 0
+        const msg = total > 0
             ? `Tarama tamamlandı — ${data.threatCount} tehditli dosya, ${data.processRiskCount} şüpheli süreç`
             : 'Tarama tamamlandı — Tehdit tespit edilmedi ✓';
         toast(msg, total > 0 ? 'error' : 'success');
@@ -1566,8 +1635,8 @@ function renderEngineIdle() {
     <div class="health-card" style="margin-bottom:20px">
         <div style="display:flex;flex-wrap:wrap;gap:6px">
             ${['%TEMP%', '%TMP%', '%LOCALAPPDATA%\\Temp', 'Downloads', 'Startup Klasörü', 'C:\\Windows\\Temp']
-                .map(d => `<span style="background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-secondary)">${d}</span>`)
-                .join('')}
+            .map(d => `<span style="background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.2);border-radius:6px;padding:3px 10px;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-secondary)">${d}</span>`)
+            .join('')}
         </div>
     </div>
 
@@ -1579,10 +1648,10 @@ function renderEngineIdle() {
 // ─── Yardımcılar ─────────────────────────────────────────────────────────────
 function _sevChip(sev) {
     const map = {
-        critical: ['high',   '⚠ Kritik'],
-        high:     ['high',   '⚠ Yüksek'],
-        medium:   ['medium', '◆ Orta'],
-        low:      ['low',    '● Düşük'],
+        critical: ['high', '⚠ Kritik'],
+        high: ['high', '⚠ Yüksek'],
+        medium: ['medium', '◆ Orta'],
+        low: ['low', '● Düşük'],
     };
     const [cls, label] = map[sev] || ['low', '● Bilinmiyor'];
     return `<span class="priority-chip ${cls}">${label}</span>`;
@@ -1638,10 +1707,10 @@ function _threatRow(t) {
 
 // ─── Dosya kartı ──────────────────────────────────────────────────────────────
 function _buildFileCard(f, index) {
-    const fileName  = f.path.split('\\').pop();
+    const fileName = f.path.split('\\').pop();
     const shortPath = f.path.length > 72 ? '…' + f.path.slice(-69) : f.path;
-    const sizeKB    = (f.size / 1024).toFixed(1);
-    const pMeta     = f.primaryTypeMeta || {};
+    const sizeKB = (f.size / 1024).toFixed(1);
+    const pMeta = f.primaryTypeMeta || {};
 
     return `
     <div class="ng-alert-card level-${_sevIconClass(f.maxSeverity)}"
@@ -1680,11 +1749,11 @@ function _buildFileCard(f, index) {
                 <span>${f.threatCount} tespit</span>
                 <span>${f.ext} · ${sizeKB} KB</span>
                 <span style="font-family:'JetBrains Mono',monospace">
-                    SHA-256: ${f.hash.substring(0,20)}…
+                    SHA-256: ${f.hash.substring(0, 20)}…
                 </span>
                 ${f.virusTypes?.length > 1
-                    ? `<span style="color:var(--priority-medium)">${f.virusTypes.length} farklı tür</span>`
-                    : ''}
+            ? `<span style="color:var(--priority-medium)">${f.virusTypes.length} farklı tür</span>`
+            : ''}
             </div>
             ${f.threats.map(t => _threatRow(t)).join('')}
         </div>
@@ -1849,20 +1918,20 @@ function filterEngineResults(type) {
     const allCard = document.getElementById('av-cat-all');
     if (allCard) {
         const isAll = type === null;
-        allCard.style.border        = isAll ? '2px solid rgba(129,140,248,0.8)' : '2px solid rgba(129,140,248,0.45)';
-        allCard.style.background    = isAll ? 'rgba(129,140,248,0.18)' : 'rgba(129,140,248,0.10)';
-        allCard.style.transform     = isAll ? 'scale(1.02)' : 'scale(1)';
-        allCard.style.boxShadow     = isAll ? '0 0 12px rgba(129,140,248,0.25)' : 'none';
+        allCard.style.border = isAll ? '2px solid rgba(129,140,248,0.8)' : '2px solid rgba(129,140,248,0.45)';
+        allCard.style.background = isAll ? 'rgba(129,140,248,0.18)' : 'rgba(129,140,248,0.10)';
+        allCard.style.transform = isAll ? 'scale(1.02)' : 'scale(1)';
+        allCard.style.boxShadow = isAll ? '0 0 12px rgba(129,140,248,0.25)' : 'none';
     }
 
     document.querySelectorAll('[id^="av-cat-"]:not(#av-cat-all):not(#av-cat-grid)').forEach(card => {
-        const ct    = card.dataset.type;
+        const ct = card.dataset.type;
         const color = card.dataset.color || '#64748b';
         const isActive = ct === type;
         const isDimmed = type !== null && !isActive;
-        card.style.opacity   = isDimmed ? '0.4' : '1';
+        card.style.opacity = isDimmed ? '0.4' : '1';
         card.style.transform = isActive ? 'scale(1.02)' : 'scale(1)';
-        card.style.border    = isActive ? `2px solid ${color}` : `1px solid ${color}30`;
+        card.style.border = isActive ? `2px solid ${color}` : `1px solid ${color}30`;
         card.style.background = isActive ? `${color}22` : `${color}0d`;
         card.style.boxShadow = isActive ? `0 0 12px ${color}40` : 'none';
     });
@@ -1891,7 +1960,7 @@ function filterEngineResults(type) {
     }
 
     // ── Dosya listesini filtrele ──
-    const listEl  = document.getElementById('av-file-list');
+    const listEl = document.getElementById('av-file-list');
     const countEl = document.getElementById('av-file-count');
     if (listEl) {
         const files = lastEngineResult.infectedFiles;
@@ -1909,7 +1978,7 @@ function filterEngineResults(type) {
     }
 
     // ── Süreç listesini filtrele ──
-    const procList  = document.getElementById('av-proc-list');
+    const procList = document.getElementById('av-proc-list');
     const procCount = document.getElementById('av-proc-count');
     if (procList) {
         const procs = lastEngineResult.suspiciousProcesses;
@@ -1939,11 +2008,11 @@ function renderEngineResults(data) {
     if (badge) {
         const total = data.threatCount + data.processRiskCount;
         badge.style.display = total > 0 ? 'flex' : 'none';
-        badge.textContent   = total > 0 ? total : '';
+        badge.textContent = total > 0 ? total : '';
     }
 
-    const elapsedSec   = (data.elapsed / 1000).toFixed(1);
-    const scanTime     = new Date(data.scanTime).toLocaleTimeString('tr-TR');
+    const elapsedSec = (data.elapsed / 1000).toFixed(1);
+    const scanTime = new Date(data.scanTime).toLocaleTimeString('tr-TR');
     const totalThreats = data.threatCount + data.processRiskCount;
 
     // ── Motor başlık kartı ──
@@ -1972,10 +2041,10 @@ function renderEngineResults(data) {
             <!-- İstatistik sayaçları -->
             <div style="display:flex;gap:18px;flex-wrap:wrap">
                 ${[
-                    { val: data.criticalCount,    label: 'Kritik',         color: data.criticalCount    > 0 ? 'var(--priority-high)'   : 'var(--text-primary)' },
-                    { val: data.highCount,         label: 'Yüksek',        color: data.highCount        > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
-                    { val: data.processRiskCount,  label: 'Şüpheli Süreç', color: data.processRiskCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
-                ].map(s => `
+            { val: data.criticalCount, label: 'Kritik', color: data.criticalCount > 0 ? 'var(--priority-high)' : 'var(--text-primary)' },
+            { val: data.highCount, label: 'Yüksek', color: data.highCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
+            { val: data.processRiskCount, label: 'Şüpheli Süreç', color: data.processRiskCount > 0 ? 'var(--priority-medium)' : 'var(--text-primary)' },
+        ].map(s => `
                     <div style="text-align:center">
                         <div style="font-size:20px;font-weight:700;color:${s.color}">${s.val}</div>
                         <div style="font-size:10px;color:var(--text-muted)">${s.label}</div>
@@ -2000,8 +2069,8 @@ function renderEngineResults(data) {
             <p>Tarama tamamlandı — herhangi bir tehdit tespit edilmedi.</p>
             <p style="font-size:11px;color:var(--text-muted)">
                 ${data.singleFile
-                    ? `${data.scannedFile} tarandı`
-                    : `${data.totalScanned} dosya incelendi · ${data.scannedDirs?.length || 0} dizin tarandı`}
+                ? `${data.scannedFile} tarandı`
+                : `${data.totalScanned} dosya incelendi · ${data.scannedDirs?.length || 0} dizin tarandı`}
             </p>
         </div>`;
         content.innerHTML = html;
@@ -2060,8 +2129,8 @@ function renderEngineResults(data) {
         <div class="health-card">
             <div style="display:flex;flex-wrap:wrap;gap:5px">
                 ${(data.scannedDirs || []).map(d =>
-                    `<span style="background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.15);border-radius:5px;padding:2px 8px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">${d}</span>`
-                ).join('')}
+            `<span style="background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.15);border-radius:5px;padding:2px 8px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">${d}</span>`
+        ).join('')}
             </div>
         </div>`;
     }
@@ -2138,7 +2207,7 @@ async function engineQuarantineAll(btn) {
                 const card = document.getElementById(`file-card-${i}`);
                 if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     toast(`${successCount} dosya karantinaya alındı.`, successCount > 0 ? 'success' : 'error');
