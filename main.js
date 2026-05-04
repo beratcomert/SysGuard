@@ -11,6 +11,7 @@ const { executeChain, buildOneClickOptimizeChain } = require('./system/chain');
 const { getDefenderStatus, runQuickScan: avRunQuickScan, cleanThreats, getDefenderHistory } = require('./system/antivirus');
 const { runEngineScan, scanSingleFile, quarantineFile, deleteFile, killProcess } = require('./system/virusEngine');
 const { getHardwareDiagnostics }             = require('./system/hardware');
+const si                                     = require('systeminformation');
 
 let mainWindow = null;
 
@@ -45,10 +46,144 @@ function createWindow() {
 // ─── Uygulama Hazır ───────────────────────────────────────────────────────────
 app.whenReady().then(() => {
     createWindow();
+    
+    // 1Hz Termal Monitör Döngüsü
+    setInterval(async () => {
+        if (!mainWindow) return;
+
+        try {
+            const cpu = await si.cpu();
+            const cpuSpeed = await si.cpuCurrentSpeed();
+            const temp = await si.cpuTemperature();
+
+            const currentMhz = Math.round(cpuSpeed.avg * 1000);
+            const maxMhz     = Math.round(cpu.speedMax * 1000);
+            const cpuTemp    = Math.round(temp.main || 45); // Fallback to 45 if no data
+
+            // Termal Darboğaz Algoritması
+            let performanceLoss = 0;
+            if (cpuTemp > 85 && currentMhz < maxMhz) {
+                performanceLoss = Math.round(100 - ((currentMhz / maxMhz) * 100));
+            }
+            performanceLoss = Math.max(0, performanceLoss);
+
+            // Durumu (State) Belirle
+            let theme = "normal";
+            if (performanceLoss > 5 || cpuTemp > 85) theme = "critical";
+            else if (cpuTemp > 70) theme = "warning";
+
+            // Arıza/Bilgi Mesajları
+            let title = "Isı Dağılımı Normal";
+            let desc = "İşlemciniz stabil sıcaklıklarda çalışıyor ve tam performans sunuyor.";
+            if (theme === "critical") {
+                title = "Isı Darboğazı Tespit Edildi!";
+                desc = `Sisteminiz kritik sıcaklıklara (${cpuTemp}°C) ulaştığı için fiziksel hasarı önlemek amacıyla kendini yavaşlatıyor. İşlemciniz şu an potansiyel performansının %${performanceLoss}'ini kaybediyor.`;
+            } else if (theme === "warning") {
+                title = "Sıcaklık Yükseliyor";
+                desc = `İşlemci sıcaklığı normalin üzerinde (${cpuTemp}°C). Soğutma sistemini kontrol etmenizde fayda var.`;
+            }
+
+            mainWindow.webContents.send('termal-guncelleme', {
+                cpu_temp: cpuTemp,
+                current_mhz: currentMhz,
+                max_mhz: maxMhz,
+                performance_loss: performanceLoss,
+                theme: theme,
+                title: title,
+                description: desc
+            });
+        } catch (err) {
+            // Sessizce devam et
+        }
+    }, 1000);
+
+    // 60s Batarya Sağlık Döngüsü
+    setInterval(() => updateBatteryHealth(), 60000);
+
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 });
+
+/**
+ * Batarya Sağlık Verilerini Çeker ve Frontend'e Gönderir
+ */
+async function updateBatteryHealth() {
+    if (!mainWindow) return;
+
+    try {
+        let battery = await si.battery();
+        
+        // Eğer si.battery() bulamazsa PowerShell ile zorla (Laptoplarda daha garantidir)
+        if (!battery.hasBattery) {
+            const psBattery = await new Promise(resolve => {
+                const { exec } = require('child_process');
+                exec('powershell -Command "Get-CimInstance -ClassName Win32_Battery | Select-Object EstimatedChargeRemaining, DesignCapacity, FullChargeCapacity | ConvertTo-Json"', (err, stdout) => {
+                    if (err || !stdout) return resolve(null);
+                    try { resolve(JSON.parse(stdout)); } catch (e) { resolve(null); }
+                });
+            });
+
+            if (psBattery) {
+                battery = {
+                    hasBattery: true,
+                    designedCapacity: psBattery.DesignCapacity,
+                    maxCapacity: psBattery.FullChargeCapacity,
+                    cycleCount: 0 // PowerShell'den döngü sayısı çekmek zordur
+                };
+            }
+        }
+
+        if (!battery || !battery.hasBattery) {
+            mainWindow.webContents.send('battery-health-update', { status: "no_battery" });
+            return;
+        }
+
+        const designed = battery.designedCapacity || 0;
+        const currentMax = battery.maxCapacity || 0;
+        const cycles = battery.cycleCount || 0;
+
+        // Sağlık ve Yıpranma Hesaplama
+        let healthPercent = 100;
+        if (designed > 0) {
+            healthPercent = Math.round((currentMax / designed) * 100);
+        }
+        healthPercent = Math.min(100, Math.max(0, healthPercent));
+        const wearLevel = 100 - healthPercent;
+
+        // Durum (State) Belirle
+        let theme = "optimum";
+        let title = "Batarya Sağlığı Mükemmel";
+        let desc = "Piliniz fabrikadan çıktığı günkü kondisyonuna çok yakın.";
+
+        if (healthPercent < 50) {
+            theme = "critical";
+            title = "Kritik Batarya Yıpranması!";
+            desc = "Pil hücreleri ömrünü tamamlamak üzere. Güvenliğiniz için değişim gerekebilir.";
+        } else if (healthPercent < 85) {
+            theme = "warning";
+            title = "Batarya Kondisyonu Azalıyor";
+            desc = "Piliniz orijinal kapasitesinin bir kısmını kaybetmiş. Ömrünü uzatmak için %20-%80 aralığında şarj edin.";
+        }
+
+        mainWindow.webContents.send('battery-health-update', {
+            status: "ok",
+            theme: theme,
+            title: title,
+            description: desc,
+            health_percent: healthPercent,
+            wear_percent: wearLevel,
+            design_cap: designed > 0 ? `${designed} mWh` : "Bilinmiyor",
+            max_cap: currentMax > 0 ? `${currentMax} mWh` : "Bilinmiyor",
+            cycle_count: cycles
+        });
+
+    } catch (err) {
+        console.error("Battery health update failed", err);
+    }
+}
+
+ipcMain.handle('trigger-battery-check', async () => updateBatteryHealth());
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();

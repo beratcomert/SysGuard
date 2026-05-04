@@ -221,6 +221,74 @@ async function getThermalAnalysis() {
 }
 
 /**
+ * Gerçek Zamanlı Telemetri ve UI Yönetim Motoru (Real-Time UI Controller)
+ * Bu fonksiyon, ham sensör verilerini alır ve UI'ın doğrudan işleyebileceği bir payload döndürür.
+ */
+function getRealtimeTelemetry(data) {
+    const { cpu_temp, current_mhz, max_mhz } = data;
+    
+    // Güç Kaybı Hesapla
+    const powerLoss = Math.max(0, (100 - ((current_mhz / max_mhz) * 100))).toFixed(1);
+    
+    // Durum (State) Belirle
+    let state = "normal";
+    if (cpu_temp > 85 && current_mhz < max_mhz) {
+        state = "critical";
+    } else if (cpu_temp > 70) {
+        state = "warning";
+    }
+
+    // UI YÖNETİM KURALLARI
+    const uiConfigs = {
+        normal: {
+            theme_color: "#ffffff",
+            badge_color: "rgba(255, 255, 255, 0.05)",
+            text_color: "#ff8fa3", // Kullanıcının isteği: #ff8fa3 (Pembe tonu)
+            title: "Isı Dağılımı Normal",
+            description: "Sisteminiz ideal sıcaklıklarda çalışıyor."
+        },
+        warning: {
+            theme_color: "#ffa500",
+            badge_color: "rgba(255, 165, 0, 0.2)",
+            text_color: "#ffa500",
+            title: "Sıcaklık Yükseliyor",
+            description: "Sıcaklık artışı tespit edildi, hava akışını kontrol edin."
+        },
+        critical: {
+            theme_color: "#ff4d4d",
+            badge_color: "rgba(255, 77, 77, 0.2)",
+            text_color: "#ff4d4d",
+            title: "Isı Darboğazı Tespit Edildi!",
+            description: "Sistem kritik sıcaklıkta! Fiziksel hasarı önlemek için hız düşürülüyor."
+        }
+    };
+
+    const config = uiConfigs[state];
+
+    return {
+        action: "update_ui_realtime",
+        target_tab: "hardware_thermal",
+        ui_directives: {
+            header_title: {
+                text: config.title,
+                color: config.theme_color
+            },
+            temperature_badge: {
+                text: `${cpu_temp}°C`,
+                bg_color: config.badge_color,
+                text_color: config.text_color
+            },
+            description_text: config.description
+        },
+        metrics_to_display: {
+            current_speed_text: `${current_mhz} MHz`,
+            expected_speed_text: `${max_mhz} MHz`,
+            power_loss_text: `%${powerLoss}`
+        }
+    };
+}
+
+/**
  * Kullanıcı tarafından tanımlanan eşik değerlerine göre analiz yapar.
  */
 function performAnalysis(inputs) {

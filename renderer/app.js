@@ -304,6 +304,11 @@ function renderHardwareResults(data) {
         </div>
     </div>
 
+    <!-- Batarya Sağlık Raporu (Yeni Modül) -->
+    <div id="battery-card-container" class="battery-card-container">
+        <div class="empty-state mini">Batarya verileri taranıyor...</div>
+    </div>
+
     <!-- Önerilen Eylemler -->
     <div class="hardware-actions-section">
         <div class="section-header"><h2>Önerilen Eylemler</h2></div>
@@ -868,14 +873,132 @@ function barColorClass(pct, type) {
     return pct > 85 ? 'bar-pink' : pct > 60 ? 'bar-yellow' : 'bar-purple';
 }
 
+// ─── Termal Monitör Dinleyicisi (Architect Prompt Uygulaması) ─────────────────
+window.electronAPI?.onThermalUpdate((data) => {
+    // Sadece donanım sekmesi aktifse veya genel olarak güncellenmesi gerekiyorsa
+    const thermalCard = document.querySelector('.thermal-analyst-card');
+    if (!thermalCard) return;
+
+    // ID'leri prompta göre güncelleme/eşleme
+    const tempEl   = document.getElementById('thermal-temp') || thermalCard.querySelector('.thermal-badge');
+    const currEl   = document.getElementById('current-speed') || thermalCard.querySelectorAll('.tm-val')[0];
+    const expEl    = document.getElementById('expected-speed') || thermalCard.querySelectorAll('.tm-val')[1];
+    const lossEl   = document.getElementById('power-loss') || thermalCard.querySelectorAll('.tm-val')[2];
+    const titleEl  = document.getElementById('thermal-title') || thermalCard.querySelector('.thermal-title');
+    const descEl   = document.getElementById('thermal-desc') || thermalCard.querySelector('.thermal-desc');
+
+    if (tempEl) tempEl.textContent = `${data.cpu_temp}°C`;
+    if (currEl) currEl.textContent = `${data.current_mhz} MHz`;
+    if (expEl)  expEl.textContent  = `${data.max_mhz} MHz`;
+    if (lossEl) lossEl.textContent  = `%${data.performance_loss}`;
+    if (titleEl) titleEl.textContent = data.title;
+    if (descEl)  descEl.textContent  = data.description;
+
+    // Tema Uygulaması
+    if (data.theme === "critical") {
+        if (titleEl) titleEl.style.color = "#ff4d4d";
+        if (tempEl)  tempEl.style.background = "rgba(255, 77, 77, 0.2)";
+        thermalCard.className = "thermal-analyst-card severity-high pulse-border";
+    } else if (data.theme === "warning") {
+        if (titleEl) titleEl.style.color = "#ffa500";
+        if (tempEl)  tempEl.style.background = "rgba(255, 165, 0, 0.2)";
+        thermalCard.className = "thermal-analyst-card severity-medium";
+    } else {
+        if (titleEl) titleEl.style.color = "#ffffff";
+        if (tempEl) {
+            tempEl.style.background = "rgba(255, 255, 255, 0.05)";
+            tempEl.style.color = "#ff8fa3";
+        }
+        thermalCard.className = "thermal-analyst-card severity-low";
+    }
+});
+
+// ─── Batarya Sağlık Dinleyicisi ──────────────────────────────────────────────
+window.electronAPI?.onBatteryUpdate((data) => {
+    const container = document.getElementById('battery-card-container');
+    if (!container) return;
+
+    if (data.status === "no_battery") {
+        container.className = 'battery-card-container active';
+        container.innerHTML = `
+            <div class="battery-no-hw">
+                <svg viewBox="0 0 24 24" fill="none" width="32" height="32" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="18" height="20" rx="2"/><path d="M7 10l5-5 5 5M12 5v12"/></svg>
+                <p>Masaüstü Sistem: Batarya Donanımı Bulunmuyor</p>
+            </div>`;
+        return;
+    }
+
+    // İlk kez doluyorsa iskeleti oluştur
+    if (!document.getElementById('battery-health-percent')) {
+        container.innerHTML = `
+            <div class="battery-header">
+                <div class="battery-icon-box">
+                    <svg viewBox="0 0 24 24" fill="none" width="24" height="24"><path d="M6 7h11a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2zM2 11h2M19 11h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="battery-title-area">
+                    <div id="battery-title" class="battery-title">Yükleniyor...</div>
+                    <div class="battery-badge">Donanım Sağlığı</div>
+                </div>
+            </div>
+            <p id="battery-desc" class="battery-desc"></p>
+            <div class="battery-stats-grid">
+                <div class="b-stat">
+                    <div class="b-label">Sağlık</div>
+                    <div id="battery-health-percent" class="b-val">--</div>
+                </div>
+                <div class="b-stat">
+                    <div class="b-label">Yıpranma</div>
+                    <div id="battery-wear-percent" class="b-val">--</div>
+                </div>
+                <div class="b-stat">
+                    <div class="b-label">Orijinal Kapasite</div>
+                    <div id="battery-design-cap" class="b-val">--</div>
+                </div>
+                <div class="b-stat">
+                    <div class="b-label">Mevcut Kapasite</div>
+                    <div id="battery-max-cap" class="b-val">--</div>
+                </div>
+            </div>`;
+    }
+
+    // ID'lere göre güncelleme
+    const healthEl = document.getElementById('battery-health-percent');
+    const wearEl   = document.getElementById('battery-wear-percent');
+    const dCapEl   = document.getElementById('battery-design-cap');
+    const mCapEl   = document.getElementById('battery-max-cap');
+    const titleEl  = document.getElementById('battery-title');
+    const descEl   = document.getElementById('battery-desc');
+
+    if (healthEl) healthEl.textContent = `%${data.health_percent}`;
+    if (wearEl)   wearEl.textContent   = `%${data.wear_percent}`;
+    if (dCapEl)   dCapEl.textContent   = data.design_cap;
+    if (mCapEl)   mCapEl.textContent   = data.max_cap;
+    if (titleEl)  titleEl.textContent  = data.title;
+    if (descEl)   descEl.textContent   = data.description;
+
+    // Tema Renkleri
+    const colors = { optimum: "#00E676", warning: "#FFA000", critical: "#FF3D00" };
+    if (titleEl) titleEl.style.color = colors[data.theme];
+    
+    // Kart Görünümü
+    container.className = `battery-card-container active theme-${data.theme}`;
+});
+
+let hardwareInterval = null;
+
 // ─── Sekme Geçişleri ─────────────────────────────────────────────────────────
 function showTab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById(`tab-${name}`)?.classList.add('active');
     document.getElementById(`nav-${name}`)?.classList.add('active');
+    
     if (name === 'health') refreshHealth();
-    if (name === 'hardware') refreshHardware();
+    if (name === 'hardware') {
+        refreshHardware().then(() => {
+            window.electronAPI?.triggerBatteryCheck(); // Kart oluştuktan sonra veriyi iste
+        });
+    }
     if (name === 'antivirus') avAutoStatus();
 }
 
